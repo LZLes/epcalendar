@@ -1,0 +1,5 @@
+{
+  "name": "myg-ep-sessions",
+  "main": "worker.ts",
+  "type": "module"
+}
