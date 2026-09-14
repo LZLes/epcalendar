@@ -118,24 +118,46 @@ source characters. Instead:
 ## Admin portal (`/admin`)
 
 Built because PocketUI's own login password can't be changed via the
-agent API, and PocketUI has no export/import. `/admin` is HTTP Basic Auth
-(any username, password checked against `admin_settings.password_hash`,
-salted SHA-256, both columns read/written via `db.rawSQL()` since that
-table's rules are all `null` — no public REST route exists for it at
-all). From the page:
+agent API, and PocketUI has no export/import. Covers full session CRUD,
+so PocketUI is optional (kept as an alternate link on the page, not
+removed). `/admin` is HTTP Basic Auth (any username, password checked
+against `admin_settings.password_hash`, salted SHA-256, both columns
+read/written via `db.rawSQL()` since that table's rules are all `null` —
+no public REST route exists for it at all). From the page:
 
+- **Sessions list** — every session, soonest first, with Edit/Delete per
+  row and an "+ Add session" button. `GET /admin`.
+- **Add / edit** — `GET /admin/sessions/new` and
+  `GET /admin/sessions/:id/edit` render a form (shared `sessionFormPage()`
+  in `worker.ts`); `POST` to the same paths validates
+  (`validateSessionValues()`) and writes via `db.rawSQL()`. A validation
+  failure re-renders the form with what was typed and a 400.
+- **Delete** — `POST /admin/sessions/:id/delete`, confirmed client-side
+  with a plain `confirm()` (uses HTML-entity-escaped quotes in the
+  `onsubmit` attribute, not backslash escapes — see the gotcha above for
+  why that distinction matters here).
 - **Export** — `/admin/export.csv` and `/admin/export.json`, all session
   columns including `id`.
 - **Import** — `/admin/import`, multipart CSV upload. A row with a blank
   `id` is inserted as new; a row whose `id` matches an existing session
-  updates it in place. **Nothing is ever deleted by import.** Both paths
-  use `db.rawSQL()` (parameterized), not `$Table` methods — the
-  `sessions` table's own create/update rules are `null` (public API is
-  read-only by design), so `$Table.insert()/.update()` would be denied
-  even from this trusted server-side route; `rawSQL()` is the documented
-  way to bypass row-level rules from code you trust.
+  updates it in place. **Nothing is ever deleted by import.**
 - **Change password** — updates `admin_settings` with a fresh random
   salt + hash. This password is unrelated to PocketUI's.
+
+All writes (add/edit/delete/import) go through `db.rawSQL()`
+(parameterized), not `$Table` methods — the `sessions` table's own
+create/update/delete rules are `null` (public API is read-only by
+design), so `$Table.insert()/.update()/.delete()` would be denied even
+from these trusted server-side routes; `rawSQL()` is the documented way
+to bypass row-level rules from code you trust. Reads (the list, exports)
+use `$Table.select()` instead, since `listRule`/`viewRule` are `'true'`
+(public) so there's no need to bypass anything for those.
+
+Session field values rendered into admin HTML (the list, form values) are
+escaped by hand with `escHtml()` — Hono's `html` tag only auto-escapes
+`${}` substitutions that aren't wrapped in `raw()`, and the session list
+is built via `raw(rows.map(...).join(''))` for the loop, so each value
+needs escaping itself rather than relying on the tag.
 
 ## Schema (sessions table)
 

@@ -549,6 +549,38 @@ const SESSION_COLUMNS = [
 ]
 const EXPORT_COLUMNS = ['id', ...SESSION_COLUMNS]
 
+// Shared coercion for the add/edit session forms (POST body -> DB values).
+// Text fields become NULL when blank so optional columns stay empty
+// rather than storing empty strings; the checkbox is present ('on') only
+// when checked, per standard HTML form submission behavior.
+function sessionValuesFromForm(body) {
+  const str = (k) => (String(body[k] || '').trim() || null)
+  return {
+    date: str('date'),
+    time: str('time'),
+    title_en: str('title_en'),
+    title_zh: str('title_zh'),
+    location_en: str('location_en'),
+    location_zh: str('location_zh'),
+    description_en: str('description_en'),
+    description_zh: str('description_zh'),
+    attire_en: str('attire_en'),
+    attire_zh: str('attire_zh'),
+    vacancy: body.vacancy !== undefined && String(body.vacancy).trim() !== '' ? parseInt(body.vacancy, 10) : null,
+    meals_provided: body.meals_provided ? 1 : 0,
+    emoji: str('emoji'),
+  }
+}
+
+function validateSessionValues(v) {
+  if (!v.date) return 'Date is required.'
+  if (!v.time) return 'Time is required.'
+  if (!v.title_en || !v.title_zh) return 'Title (EN and 中文) is required.'
+  if (!v.location_en || !v.location_zh) return 'Location (EN and 中文) is required.'
+  if (v.vacancy !== null && (Number.isNaN(v.vacancy) || v.vacancy < 0)) return 'Vacancy must be a non-negative number.'
+  return null
+}
+
 async function sha256Hex(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
@@ -628,35 +660,59 @@ function parseCsv(text) {
     })
 }
 
-function adminPage({ notice, ok } = {}) {
-  return html`<!doctype html><html lang="en"><head><meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Admin — MINDS MYG EP Project</title>
-<link rel="icon" type="image/png" href="${LOGO_DATA_URI}"/>
-${PAGE_STYLE}
-<style>
-.admin-wrap{max-width:560px;margin:0 auto;padding:28px 16px 60px}
+const ADMIN_STYLE = raw(`<style>
+.admin-wrap{max-width:720px;margin:0 auto;padding:28px 16px 60px}
+.admin-wrap.narrow{max-width:560px}
 .admin-wrap h1{font-size:20px;margin:0 0 4px}
 .admin-wrap p.lead{color:var(--ink-soft);font-size:13.5px;margin:0 0 24px}
 .admin-card{background:var(--card);border:1px solid var(--card-border);border-radius:14px;padding:18px 20px;margin-bottom:18px;box-shadow:var(--shadow-sm)}
 .admin-card h2{font-size:14.5px;margin:0 0 10px}
 .admin-card p.hint{font-size:12.5px;color:var(--ink-soft);margin:6px 0 14px}
 .admin-card label{display:block;font-size:12.5px;font-weight:600;margin:10px 0 4px;color:var(--ink-soft)}
-.admin-card input[type=password],.admin-card input[type=file],.admin-card textarea{
+.admin-card input[type=password],.admin-card input[type=file],.admin-card input[type=text],
+.admin-card input[type=date],.admin-card input[type=number],.admin-card textarea{
   width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13.5px;
   background:var(--bg);color:var(--ink);font-family:inherit}
-.admin-card textarea{min-height:100px;resize:vertical}
+.admin-card textarea{min-height:80px;resize:vertical}
 .admin-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
 .admin-btn{border:none;border-radius:8px;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;
   background:linear-gradient(135deg,var(--accent) 0%,var(--accent-2) 100%);color:#fff}
 .admin-btn.secondary{background:var(--chip-bg);color:var(--ink)}
+.admin-btn.danger{background:var(--danger-soft);color:var(--danger)}
 .admin-link{display:inline-block;font-size:13px;color:var(--accent-ink);text-decoration:none;font-weight:600}
 .notice{border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:18px}
 .notice.ok{background:var(--accent-soft);color:var(--accent-ink)}
 .notice.err{background:var(--danger-soft);color:var(--danger)}
 .back-link{font-size:13px;color:var(--ink-soft);text-decoration:none;display:inline-block;margin-bottom:16px}
-</style>
-</head><body>
+.field-pair{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+@media(max-width:480px){.field-pair{grid-template-columns:1fr}}
+.session-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.session-row:last-child{border-bottom:none}
+.session-row .meta{flex:1;min-width:0}
+.session-row .meta .d{font-size:12px;color:var(--accent-ink);font-weight:700}
+.session-row .meta .t{font-size:14px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.session-row .row-actions{display:flex;gap:6px;flex-shrink:0}
+.session-row .row-actions a,.session-row .row-actions button{font-size:12px;font-weight:600;border:none;
+  border-radius:7px;padding:6px 10px;cursor:pointer;text-decoration:none;background:var(--chip-bg);color:var(--ink)}
+.session-row .row-actions button.danger{background:var(--danger-soft);color:var(--danger)}
+.empty-hint{font-size:13px;color:var(--ink-soft);padding:8px 0}
+.checkbox-row{display:flex;align-items:center;gap:8px;margin-top:14px}
+.checkbox-row input{width:16px;height:16px;accent-color:var(--accent)}
+.checkbox-row label{margin:0;font-weight:600;color:var(--ink)}
+</style>`)
+
+function adminHeader(title) {
+  return html`<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${title} — MINDS MYG EP Project</title>
+<link rel="icon" type="image/png" href="${LOGO_DATA_URI}"/>
+${PAGE_STYLE}
+${ADMIN_STYLE}`
+}
+
+function adminPage({ notice, ok, sessions } = {}) {
+  const rows = sessions || []
+  return html`<!doctype html><html lang="en"><head>${adminHeader('Admin')}</head><body>
 <div class="admin-wrap">
   <a class="back-link" href="/">&larr; Back to calendar</a>
   <h1>Admin portal</h1>
@@ -664,9 +720,30 @@ ${PAGE_STYLE}
   ${notice ? html`<div class="notice ${ok ? 'ok' : 'err'}">${notice}</div>` : ''}
 
   <div class="admin-card">
-    <h2>Edit sessions</h2>
-    <p class="hint">Add, edit, or delete individual sessions in the built-in table editor.</p>
-    <a class="admin-link" href="/api/v1/pocket/" target="_blank" rel="noopener">Open PocketUI &rarr;</a>
+    <h2>Sessions</h2>
+    <p class="hint">Add, edit, or delete sessions one at a time. Changes are live immediately.</p>
+    ${rows.length === 0
+      ? html`<p class="empty-hint">No sessions yet.</p>`
+      : raw(rows.map((s) => (
+          '<div class="session-row">' +
+            '<div class="meta">' +
+              '<div class="d">' + escHtml(s.date) + (s.time ? ' &middot; ' + escHtml(s.time) : '') + '</div>' +
+              '<div class="t">' + (s.emoji ? escHtml(s.emoji) + ' ' : '') + escHtml(s.title_en || s.title_zh || '(untitled)') + '</div>' +
+            '</div>' +
+            '<div class="row-actions">' +
+              '<a href="/admin/sessions/' + encodeURIComponent(s.id) + '/edit">Edit</a>' +
+              '<form method="post" action="/admin/sessions/' + encodeURIComponent(s.id) + '/delete" ' +
+                'onsubmit="return confirm(&quot;Delete this session? This cannot be undone.&quot;)" style="display:inline">' +
+                '<button type="submit" class="danger">Delete</button>' +
+              '</form>' +
+            '</div>' +
+          '</div>'
+        )).join(''))
+    }
+    <div class="admin-actions">
+      <a class="admin-btn" href="/admin/sessions/new">+ Add session</a>
+      <a class="admin-link" href="/api/v1/pocket/" target="_blank" rel="noopener" style="align-self:center">or use PocketUI &rarr;</a>
+    </div>
   </div>
 
   <div class="admin-card">
@@ -691,8 +768,8 @@ ${PAGE_STYLE}
 
   <div class="admin-card">
     <h2>Change admin password</h2>
-    <p class="hint">This password protects this page (export / import). It's separate from PocketUI's own
-      editor/viewer login above — PocketUI's password can't be changed from here.</p>
+    <p class="hint">This password protects this page. It's separate from PocketUI's own editor/viewer login above —
+      PocketUI's password can't be changed from here.</p>
     <form method="post" action="/admin/change-password">
       <label for="new_password">New password</label>
       <input type="password" id="new_password" name="new_password" minlength="6" required/>
@@ -705,17 +782,163 @@ ${PAGE_STYLE}
 </body></html>`
 }
 
+// Server-side HTML-escaping for values placed inside a raw()-wrapped
+// string (Hono's html`` tag only auto-escapes ${} substitutions that are
+// NOT wrapped in raw() — the session list above builds its markup via
+// plain string concatenation for the loop, so each value is escaped by
+// hand here instead).
+function escHtml(s) {
+  if (s === null || s === undefined) return ''
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  })
+}
+
+function sessionFormPage({ session, action, title, notice, ok } = {}) {
+  const s = session || {}
+  const val = (k) => escHtml(s[k])
+  return html`<!doctype html><html lang="en"><head>${adminHeader(title)}</head><body>
+<div class="admin-wrap narrow">
+  <a class="back-link" href="/admin">&larr; Back to admin</a>
+  <h1>${title}</h1>
+  ${notice ? html`<div class="notice ${ok ? 'ok' : 'err'}">${notice}</div>` : ''}
+  <div class="admin-card">
+    <form method="post" action="${action}">
+      <div class="field-pair">
+        <div><label for="date">Date</label><input type="date" id="date" name="date" value="${val('date')}" required/></div>
+        <div><label for="time">Time</label><input type="text" id="time" name="time" value="${val('time')}" placeholder="9:30 AM - 11:30 AM" required/></div>
+      </div>
+
+      <div class="field-pair">
+        <div><label for="title_en">Title (EN)</label><input type="text" id="title_en" name="title_en" value="${val('title_en')}" required/></div>
+        <div><label for="title_zh">Title (中文)</label><input type="text" id="title_zh" name="title_zh" value="${val('title_zh')}" required/></div>
+      </div>
+
+      <div class="field-pair">
+        <div><label for="location_en">Location (EN)</label><input type="text" id="location_en" name="location_en" value="${val('location_en')}" required/></div>
+        <div><label for="location_zh">Location (中文)</label><input type="text" id="location_zh" name="location_zh" value="${val('location_zh')}" required/></div>
+      </div>
+
+      <div class="field-pair">
+        <div><label for="description_en">Description (EN)</label><textarea id="description_en" name="description_en">${val('description_en')}</textarea></div>
+        <div><label for="description_zh">Description (中文)</label><textarea id="description_zh" name="description_zh">${val('description_zh')}</textarea></div>
+      </div>
+
+      <div class="field-pair">
+        <div><label for="attire_en">Attire (EN)</label><input type="text" id="attire_en" name="attire_en" value="${val('attire_en')}"/></div>
+        <div><label for="attire_zh">Attire (中文)</label><input type="text" id="attire_zh" name="attire_zh" value="${val('attire_zh')}"/></div>
+      </div>
+
+      <div class="field-pair">
+        <div><label for="vacancy">Vacancy (blank = not shown)</label><input type="number" id="vacancy" name="vacancy" min="0" value="${val('vacancy')}"/></div>
+        <div><label for="emoji">Emoji (optional)</label><input type="text" id="emoji" name="emoji" value="${val('emoji')}" placeholder="🎉"/></div>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="meals_provided" name="meals_provided" ${s.meals_provided ? 'checked' : ''}/>
+        <label for="meals_provided">Meals provided</label>
+      </div>
+
+      <div class="admin-actions">
+        <button class="admin-btn" type="submit">Save session</button>
+        <a class="admin-btn secondary" href="/admin">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+</body></html>`
+}
+
+async function listSessionsForAdmin(db) {
+  const result = await db.table('sessions').select({ select: EXPORT_COLUMNS, order: 'date', sort: 'asc', limit: 5000 })
+  return Array.isArray(result) ? result : result.items || result.results || []
+}
+
 userApp.get('/admin', async (c) => {
   const db = await requireAdmin(c)
   if (!db) return unauthorized(c)
-  return c.html(adminPage())
+  const sessions = await listSessionsForAdmin(db)
+  return c.html(adminPage({ sessions }))
+})
+
+userApp.get('/admin/sessions/new', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+  return c.html(sessionFormPage({ action: '/admin/sessions/new', title: 'Add session' }))
+})
+
+userApp.post('/admin/sessions/new', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+  const body = await c.req.parseBody()
+  const values = sessionValuesFromForm(body)
+  const err = validateSessionValues(values)
+  if (err) return c.html(sessionFormPage({ session: body, action: '/admin/sessions/new', title: 'Add session', notice: err, ok: false }), 400)
+
+  const newId = crypto.randomUUID()
+  await db.rawSQL({
+    q: `INSERT INTO sessions (id, date, time, title_en, title_zh, location_en, location_zh, description_en,
+        description_zh, attire_en, attire_zh, vacancy, meals_provided, emoji)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    v: [newId, values.date, values.time, values.title_en, values.title_zh, values.location_en, values.location_zh,
+        values.description_en, values.description_zh, values.attire_en, values.attire_zh, values.vacancy,
+        values.meals_provided, values.emoji],
+  }).run()
+
+  const sessions = await listSessionsForAdmin(db)
+  return c.html(adminPage({ sessions, notice: 'Session added.', ok: true }))
+})
+
+userApp.get('/admin/sessions/:id/edit', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+  const id = c.req.param('id')
+  const rows = await db.rawSQL({ q: 'SELECT * FROM sessions WHERE id = ?', v: [id] }).run()
+  const session = rows && rows[0]
+  if (!session) return c.html(adminPage({ notice: 'Session not found — it may have been deleted.', ok: false }), 404)
+  return c.html(sessionFormPage({ session, action: '/admin/sessions/' + encodeURIComponent(id) + '/edit', title: 'Edit session' }))
+})
+
+userApp.post('/admin/sessions/:id/edit', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+  const id = c.req.param('id')
+  const body = await c.req.parseBody()
+  const values = sessionValuesFromForm(body)
+  const err = validateSessionValues(values)
+  if (err) {
+    return c.html(sessionFormPage({
+      session: { ...body, id }, action: '/admin/sessions/' + encodeURIComponent(id) + '/edit',
+      title: 'Edit session', notice: err, ok: false,
+    }), 400)
+  }
+
+  await db.rawSQL({
+    q: `UPDATE sessions SET date=?, time=?, title_en=?, title_zh=?, location_en=?, location_zh=?,
+        description_en=?, description_zh=?, attire_en=?, attire_zh=?, vacancy=?, meals_provided=?, emoji=?,
+        updated=CURRENT_TIMESTAMP WHERE id=?`,
+    v: [values.date, values.time, values.title_en, values.title_zh, values.location_en, values.location_zh,
+        values.description_en, values.description_zh, values.attire_en, values.attire_zh, values.vacancy,
+        values.meals_provided, values.emoji, id],
+  }).run()
+
+  const sessions = await listSessionsForAdmin(db)
+  return c.html(adminPage({ sessions, notice: 'Session updated.', ok: true }))
+})
+
+userApp.post('/admin/sessions/:id/delete', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+  const id = c.req.param('id')
+  await db.rawSQL({ q: 'DELETE FROM sessions WHERE id = ?', v: [id] }).run()
+  const sessions = await listSessionsForAdmin(db)
+  return c.html(adminPage({ sessions, notice: 'Session deleted.', ok: true }))
 })
 
 userApp.get('/admin/export.csv', async (c) => {
   const db = await requireAdmin(c)
   if (!db) return unauthorized(c)
-  const result = await db.table('sessions').select({ select: EXPORT_COLUMNS, order: 'date', sort: 'asc', limit: 5000 })
-  const rows = Array.isArray(result) ? result : result.items || result.results || []
+  const rows = await listSessionsForAdmin(db)
   return c.body(toCsv(rows), 200, {
     'content-type': 'text/csv; charset=utf-8',
     'content-disposition': 'attachment; filename="sessions.csv"',
@@ -725,8 +948,7 @@ userApp.get('/admin/export.csv', async (c) => {
 userApp.get('/admin/export.json', async (c) => {
   const db = await requireAdmin(c)
   if (!db) return unauthorized(c)
-  const result = await db.table('sessions').select({ select: EXPORT_COLUMNS, order: 'date', sort: 'asc', limit: 5000 })
-  const rows = Array.isArray(result) ? result : result.items || result.results || []
+  const rows = await listSessionsForAdmin(db)
   return c.body(JSON.stringify(rows, null, 2), 200, {
     'content-type': 'application/json; charset=utf-8',
     'content-disposition': 'attachment; filename="sessions.json"',

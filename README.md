@@ -7,12 +7,12 @@ registration or login.
 Built on [teenyapp.com](https://teenyapp.com), project slug `myg-ep-sessions`.
 
 - **Live site:** https://myg-ep-sessions.app.teenyapp.com
-- **Admin panel (PocketUI):** `/api/v1/pocket/` — where sessions are
-  created/edited/deleted one at a time (editor login). Credentials aren't
-  stored in this repo — see the project dashboard, or the chat this was
-  set up in.
-- **Admin portal:** `/admin` — bulk export/import (CSV + JSON) and its own
-  changeable password. See `CLAUDE.md` for details.
+- **Admin portal:** `/admin` — add/edit/delete sessions, bulk export/
+  import (CSV + JSON), and its own changeable password. The main way to
+  manage sessions day to day. See `CLAUDE.md` for details.
+- **PocketUI (optional):** `/api/v1/pocket/` — the built-in raw table
+  editor, still there as a fallback. Credentials aren't stored in this
+  repo — see the project dashboard, or the chat this was set up in.
 
 **For a full technical write-up (architecture, how to make changes, a
 platform quirk worth knowing about before editing `worker.ts`), see
@@ -40,12 +40,14 @@ needed).
 
 ## Managing sessions
 
-Two ways:
-- **One at a time:** PocketUI (`/api/v1/pocket/`) — a full table editor.
-- **In bulk:** the `/admin` portal — export everything to CSV, edit in a
+- **One at a time:** the `/admin` portal's session list — add, edit, or
+  delete a single session with a plain form. No PocketUI needed.
+- **In bulk:** also from `/admin` — export everything to CSV, edit in a
   spreadsheet, re-import (rows with a blank `id` are added, rows whose
   `id` matches an existing session update it — nothing is ever deleted by
   import).
+- **PocketUI** (`/api/v1/pocket/`) still works too, if you prefer its raw
+  table view for something the portal doesn't cover.
 
 Add more fields to the `sessions` table any time — see "Schema" in
 `CLAUDE.md` for the full checklist (it touches more than just
