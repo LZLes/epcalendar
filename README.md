@@ -6,36 +6,47 @@ registration or login.
 
 Built on [teenyapp.com](https://teenyapp.com), project slug `myg-ep-sessions`.
 
-- **Preview:** https://myg-ep-sessions.app.teenyapp.com
-- **Claim link:** https://teenyapp.com/claim/myg-ep-sessions — must be
-  claimed within 12 hours of creation or the project expires.
-- **Admin panel (PocketUI):** https://myg-ep-sessions.app.teenyapp.com/api/v1/pocket/
-  — this is where sessions are created/edited/deleted (editor login).
-  Credentials are not stored in this repo; see the project dashboard after
-  claiming, or the chat where this was originally set up.
+- **Live site:** https://myg-ep-sessions.app.teenyapp.com
+- **Admin panel (PocketUI):** `/api/v1/pocket/` — where sessions are
+  created/edited/deleted one at a time (editor login). Credentials aren't
+  stored in this repo — see the project dashboard, or the chat this was
+  set up in.
+- **Admin portal:** `/admin` — bulk export/import (CSV + JSON) and its own
+  changeable password. See `CLAUDE.md` for details.
+
+**For a full technical write-up (architecture, how to make changes, a
+platform quirk worth knowing about before editing `worker.ts`), see
+[`CLAUDE.md`](./CLAUDE.md).**
 
 ## What's here
 
-- `teenybase.ts` — schema for the single `sessions` table (date, time,
-  bilingual title/location/description/attire, vacancy, meals provided) and
-  access rules (public read-only; no public write route at all — writes go
-  through the PocketUI admin panel only).
-- `worker.ts` — the single SSR page. Sessions are read server-side and
-  embedded as JSON; a small client script handles the EN/中文 toggle,
-  grouping by month, and hiding/showing past sessions, all without a reload.
-  Timezone: Asia/Singapore.
+- `teenybase.ts` — schema (`sessions`, `admin_settings` tables) and access
+  rules. Public read-only; no public write route at all.
+- `worker.ts` — the whole app: the public SSR page (bilingual toggle,
+  dark mode, add-to-calendar, grouped by month, past sessions hidden by
+  default) and the password-gated `/admin` portal (export/import/change
+  password).
+- `assets/eastpoint-logo.png` — the project's logo, also embedded inline
+  in `worker.ts`.
 - `package.json` — teenyapp project manifest.
 
-These files mirror what's deployed on teenyapp.com. To make further changes,
-either edit here and re-upload via the teenyapp file API, or continue
+These files mirror what's deployed on teenyapp.com — this repo isn't
+itself hosted anywhere. To make further changes, either edit here and
+re-upload via the teenyapp file API (see `CLAUDE.md`), or continue
 directly against the project using its agent link (fetch
 `https://teenyapp.com/agent/<token>/agents.md` for the current API base,
 auth, and workflow — ask the project owner for a fresh agent token if
 needed).
 
-## Adding sessions
+## Managing sessions
 
-Sessions are managed by the admin only, through PocketUI
-(`/api/v1/pocket/`) — no custom admin page. Add more fields to the
-`sessions` table in `teenybase.ts` any time; schema changes need a save +
-commit against the teenyapp project to take effect.
+Two ways:
+- **One at a time:** PocketUI (`/api/v1/pocket/`) — a full table editor.
+- **In bulk:** the `/admin` portal — export everything to CSV, edit in a
+  spreadsheet, re-import (rows with a blank `id` are added, rows whose
+  `id` matches an existing session update it — nothing is ever deleted by
+  import).
+
+Add more fields to the `sessions` table any time — see "Schema" in
+`CLAUDE.md` for the full checklist (it touches more than just
+`teenybase.ts` if the field should show up in export/import too).

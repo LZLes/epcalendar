@@ -5,8 +5,11 @@
 // script handles language toggling, grouping by month, and hiding/
 // showing past sessions — all without a page reload or extra API call.
 //
-// Writes are not exposed on this worker at all — the admin manages
-// sessions through the built-in PocketUI admin panel (see teenybase.ts).
+// There is no public write route — the sessions table's create/update/
+// delete rules are all `null` (see teenybase.ts). The admin edits rows
+// one at a time through the built-in PocketUI panel (/api/v1/pocket/),
+// or in bulk through the custom, password-gated /admin portal below
+// (export/import CSV + JSON, change its own password).
 
 import { $Database, teenyHono, OpenApiExtension, PocketUIExtension, Hono, html, raw } from 'teenybase'
 import config from 'virtual:teenybase'
@@ -39,6 +42,7 @@ function layout(c, pageTitle, pageDesc, bodyHtml) {
 <meta property="og:url" content="${canonical}"/>
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="theme-color" content="#0f2d22"/>
+<link rel="icon" type="image/png" href="${LOGO_DATA_URI}"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet"/>
@@ -151,6 +155,10 @@ header.top{
 .pill.vacancy-low{color:var(--danger);background:var(--danger-soft)}
 .pill.vacancy-ok{color:var(--accent-ink);background:var(--accent-soft)}
 .card p.desc{margin:7px 0 0;font-size:13.5px;color:var(--ink-soft);white-space:pre-line}
+.card-emoji{margin-right:7px;font-size:1.05em}
+.cal-btn{margin-top:11px;border:1px solid var(--border);background:var(--chip-bg);color:var(--ink-soft);
+  font-size:12px;font-weight:600;padding:6px 12px;border-radius:999px;cursor:pointer;transition:background-color .15s ease,color .15s ease}
+.cal-btn:hover{background:var(--accent-soft);color:var(--accent-ink)}
 .empty-state{text-align:center;padding:56px 16px;color:var(--ink-soft)}
 .empty-state .big{font-size:30px;margin-bottom:10px}
 footer.note{max-width:640px;margin:20px auto 0;padding:0 16px;font-size:11.5px;color:var(--ink-faint);text-align:center}
@@ -174,7 +182,6 @@ const I18N = {
     subtitle: 'Session calendar',
     upcoming: 'Upcoming sessions',
     showPast: 'Show past sessions',
-    vacancy: (n) => `${n} spot${n === 1 ? '' : 's'} left`,
     vacancyFull: 'Fully booked',
     meals: 'Meals provided',
     attire: 'Attire',
@@ -182,13 +189,13 @@ const I18N = {
     emptyBody: 'Check back soon — new sessions will appear here as they are added.',
     emptyPastBody: 'No sessions to show yet.',
     footer: 'All times are Singapore time (SGT).',
+    addToCalendar: '📅 Add to calendar',
   },
   zh: {
     title: 'MINDS MYG EP 计划',
     subtitle: '活动日历',
     upcoming: '即将举行的场次',
     showPast: '显示已过去的场次',
-    vacancy: (n) => `剩余 ${n} 个名额`,
     vacancyFull: '名额已满',
     meals: '提供餐点',
     attire: '服装要求',
@@ -196,56 +203,31 @@ const I18N = {
     emptyBody: '请稍后再查看，新的场次会在这里显示。',
     emptyPastBody: '暂无可显示的场次。',
     footer: '所有时间均为新加坡时间 (SGT)。',
+    addToCalendar: '📅 加入日历',
   },
 }
 
 // Renders the initial (server-side) HTML shell. All actual list
 // rendering happens client-side from window.__SESSIONS__ so the
 // language toggle and "show past" toggle need no reload / re-fetch.
-function renderPage(sessionsJson) {
-  const dataScript = raw(
-    `<script>window.__SESSIONS__ = ${JSON.stringify(sessionsJson).replace(/</g, '\\u003c')};` +
-    `window.__I18N__ = ${JSON.stringify(I18N).replace(/</g, '\\u003c')};</script>`
-  )
-
-  return html`${PAGE_STYLE}
-<div class="wrap">
-  <header class="top">
-    <div class="brand">
-      <div class="logo-slot" aria-hidden="true"><img src="${LOGO_DATA_URI}" alt=""/></div>
-      <div>
-        <h1 data-i18n="title">MINDS MYG EP Project</h1>
-        <p data-i18n="subtitle">Session calendar</p>
-      </div>
-    </div>
-    <div class="controls">
-      <div class="lang-toggle" role="group" aria-label="Language">
-        <button type="button" data-lang="en" class="active" aria-pressed="true">EN</button>
-        <button type="button" data-lang="zh" aria-pressed="false">中文</button>
-      </div>
-      <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">
-        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>
-      </button>
-    </div>
-  </header>
-
-  <div class="subhead">
-    <h2 data-i18n="upcoming">Upcoming sessions</h2>
-    <label class="past-toggle">
-      <input type="checkbox" id="showPastToggle" />
-      <span data-i18n="showPast">Show past sessions</span>
-    </label>
-  </div>
-
-  <div id="list"></div>
-</div>
-<footer class="note" data-i18n="footer">All times are Singapore time (SGT).</footer>
-${dataScript}
-<script>
+// The full client-side script, kept in its own template literal (not
+// inlined into renderPage's `html` tag) so backslash escapes here
+// (icsEscape, etc.) are interpreted exactly once — by this literal
+// itself — instead of being cooked away a second time by the outer
+// `html` template before ever reaching the browser.
+const CLIENT_SCRIPT = raw(`<script>
 (function () {
   var TZ = 'Asia/Singapore';
   var state = { lang: 'en', showPast: false };
+
+  function fromBase64Utf8(b64) {
+    var binary = atob(b64);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  window.__SESSIONS__ = JSON.parse(fromBase64Utf8(window.__SESSIONS_B64__));
+  window.__I18N__ = JSON.parse(fromBase64Utf8(window.__I18N_B64__));
 
   function todayISO() {
     // YYYY-MM-DD in Singapore time, robust across browsers via en-CA locale.
@@ -270,6 +252,14 @@ ${dataScript}
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
+  }
+
+  // Kept as plain client code rather than part of window.__I18N__: that
+  // object round-trips through JSON (see toBase64Utf8/fromBase64Utf8),
+  // which would silently drop a function-valued property.
+  function vacancyText(lang, n) {
+    if (lang === 'zh') return '剩余 ' + n + ' 个名额';
+    return n + ' spot' + (n === 1 ? '' : 's') + ' left';
   }
 
   function applyStaticI18n() {
@@ -325,7 +315,7 @@ ${dataScript}
         if (typeof r.vacancy === 'number') {
           var low = r.vacancy <= 0;
           pills += '<span class="pill' + (low ? ' vacancy-low' : ' vacancy-ok') + '">' +
-            esc(low ? t.vacancyFull : t.vacancy(r.vacancy)) + '</span>';
+            esc(low ? t.vacancyFull : vacancyText(state.lang, r.vacancy)) + '</span>';
         }
         if (r.meals_provided) {
           pills += '<span class="pill">' + esc(t.meals) + '</span>';
@@ -334,16 +324,24 @@ ${dataScript}
           pills += '<span class="pill">' + esc(t.attire) + ': ' + esc(attire) + '</span>';
         }
 
+        var icsAttrs =
+          ' data-ics-date="' + esc(r.date) + '"' +
+          ' data-ics-time="' + esc(r.time || '') + '"' +
+          ' data-ics-title="' + esc(title) + '"' +
+          ' data-ics-location="' + esc(location || '') + '"' +
+          ' data-ics-desc="' + esc(desc || '') + '"';
+
         return (
           '<div class="card' + (isPast ? ' is-past' : '') + '">' +
             '<div class="date-row">' +
               '<span class="date-line">' + esc(dateLabel(r.date, state.lang)) + '</span>' +
               '<span class="time-line">' + esc(r.time || '') + '</span>' +
             '</div>' +
-            '<h3>' + esc(title) + '</h3>' +
+            '<h3>' + (r.emoji ? '<span class="card-emoji">' + esc(r.emoji) + '</span>' : '') + esc(title) + '</h3>' +
             (location ? '<div class="meta-row"><span class="pill">📍 ' + esc(location) + '</span></div>' : '') +
             (pills ? '<div class="meta-row">' + pills + '</div>' : '') +
             (desc ? '<p class="desc">' + esc(desc) + '</p>' : '') +
+            (isPast ? '' : '<button type="button" class="cal-btn"' + icsAttrs + '>' + esc(t.addToCalendar) + '</button>') +
           '</div>'
         );
       }).join('');
@@ -370,6 +368,68 @@ ${dataScript}
     render();
   });
 
+  function icsEscape(s) {
+    // Built with String.fromCharCode + split/join instead of backslash-escape
+    // literals: this project's build pipeline collapses doubled backslash
+    // escapes in source text, so writing them directly breaks at runtime.
+    var BS = String.fromCharCode(92);
+    var NL = String.fromCharCode(10);
+    return String(s || '')
+      .split(BS).join(BS + BS)
+      .split(';').join(BS + ';')
+      .split(',').join(BS + ',')
+      .split(NL).join(BS + 'n');
+  }
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  function downloadIcs(ds) {
+    var NL = String.fromCharCode(10);
+    var CRLF = String.fromCharCode(13) + String.fromCharCode(10);
+    // Work with the plain Y/M/D calendar date throughout (no Date object
+    // anchored to a local time), so this can't drift a day depending on
+    // the viewer's browser timezone vs. Singapore time.
+    var dateParts = ds.date.split('-').map(function (x) { return parseInt(x, 10); });
+    var startUTC = Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2]);
+    var next = new Date(startUTC + 86400000);
+    var fmt = function (yy, mm, dd) { return yy + pad2(mm) + pad2(dd); };
+    var startStr = fmt(dateParts[0], dateParts[1], dateParts[2]);
+    var endStr = fmt(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate());
+    var stamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    var descLines = [ds.time, ds.location, ds.desc].filter(Boolean).join(NL);
+    var uid = 'ep-' + ds.date + '-' + Math.random().toString(36).slice(2) + '@myg-ep-sessions';
+    var ics = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//MINDS MYG EP Project//Session Calendar//EN',
+      'BEGIN:VEVENT', 'UID:' + uid, 'DTSTAMP:' + stamp,
+      'DTSTART;VALUE=DATE:' + startStr, 'DTEND;VALUE=DATE:' + endStr,
+      'SUMMARY:' + icsEscape(ds.title),
+      ds.location ? 'LOCATION:' + icsEscape(ds.location) : '',
+      'DESCRIPTION:' + icsEscape(descLines),
+      'END:VEVENT', 'END:VCALENDAR',
+    ].filter(Boolean).join(CRLF);
+    var blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'session-' + ds.date + '.ics';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+
+  document.getElementById('list').addEventListener('click', function (e) {
+    var btn = e.target.closest('.cal-btn');
+    if (!btn) return;
+    downloadIcs({
+      date: btn.getAttribute('data-ics-date'),
+      time: btn.getAttribute('data-ics-time'),
+      title: btn.getAttribute('data-ics-title'),
+      location: btn.getAttribute('data-ics-location'),
+      desc: btn.getAttribute('data-ics-desc'),
+    });
+  });
+
   var themeBtn = document.getElementById('themeToggle');
   if (themeBtn) {
     themeBtn.addEventListener('click', function () {
@@ -384,7 +444,64 @@ ${dataScript}
 
   render();
 })();
-</script>
+</script>`)
+
+// UTF-8-safe base64 of a string, built from plain Web APIs (TextEncoder +
+// btoa) with no backslash-escape source literals. Session data is passed
+// to the browser this way, base64-encoded, instead of as an inline JSON
+// literal: this project's build pipeline corrupts backslash escapes routed
+// through html()/raw()/c.html(), which would otherwise let a `<` inside
+// user-entered session text (e.g. a title) break out of the <script> tag.
+// Base64 text uses none of the characters (\, <, >, ", ') that are ever at
+// risk, sidestepping the whole issue.
+function toBase64Utf8(str) {
+  const bytes = new TextEncoder().encode(str)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  return btoa(binary)
+}
+
+function renderPage(sessionsJson) {
+  const dataScript = raw(
+    '<script>window.__SESSIONS_B64__ = "' + toBase64Utf8(JSON.stringify(sessionsJson)) + '";' +
+    'window.__I18N_B64__ = "' + toBase64Utf8(JSON.stringify(I18N)) + '";</script>'
+  )
+
+  return html`${PAGE_STYLE}
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="logo-slot" aria-hidden="true"><img src="${LOGO_DATA_URI}" alt=""/></div>
+      <div>
+        <h1 data-i18n="title">MINDS MYG EP Project</h1>
+        <p data-i18n="subtitle">Session calendar</p>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="lang-toggle" role="group" aria-label="Language">
+        <button type="button" data-lang="en" class="active" aria-pressed="true">EN</button>
+        <button type="button" data-lang="zh" aria-pressed="false">中文</button>
+      </div>
+      <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="subhead">
+    <h2 data-i18n="upcoming">Upcoming sessions</h2>
+    <label class="past-toggle">
+      <input type="checkbox" id="showPastToggle" />
+      <span data-i18n="showPast">Show past sessions</span>
+    </label>
+  </div>
+
+  <div id="list"></div>
+</div>
+<footer class="note" data-i18n="footer">All times are Singapore time (SGT).</footer>
+${dataScript}
+${CLIENT_SCRIPT}
 `
 }
 
@@ -394,7 +511,7 @@ userApp.get('/', async (c) => {
     select: [
       'date', 'time', 'title_en', 'title_zh', 'location_en', 'location_zh',
       'description_en', 'description_zh', 'attire_en', 'attire_zh',
-      'vacancy', 'meals_provided',
+      'vacancy', 'meals_provided', 'emoji',
     ],
     order: 'date',
     sort: 'asc',
@@ -408,6 +525,309 @@ userApp.get('/', async (c) => {
   }))
 
   return c.html(layout(c, 'MINDS MYG EP Project — Session Calendar', description, renderPage(rows)))
+})
+
+// ---------------------------------------------------------------------
+// Admin portal: /admin — change the admin password, export sessions to
+// CSV/JSON, and bulk-import them back. Protected with HTTP Basic Auth
+// (browser-native login prompt) checked against a salted hash stored in
+// the `admin_settings` table (see teenybase.ts). This table has every
+// rule set to `null` (no public API at all) — these routes reach it only
+// via db.rawSQL(), which is the documented way to bypass row-level rules
+// from trusted server-side code.
+//
+// Session writes here (import) also go through db.rawSQL() rather than
+// $Table methods: sessions' own create/update rules are `null` (deny) on
+// purpose, so that the public REST API stays fully read-only — rawSQL is
+// how this trusted, password-gated route reaches around that.
+
+const ADMIN_REALM = 'EP Admin'
+const SESSION_COLUMNS = [
+  'date', 'time', 'title_en', 'title_zh', 'location_en', 'location_zh',
+  'description_en', 'description_zh', 'attire_en', 'attire_zh',
+  'vacancy', 'meals_provided', 'emoji',
+]
+const EXPORT_COLUMNS = ['id', ...SESSION_COLUMNS]
+
+async function sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+function parseBasicAuth(header) {
+  if (!header || !header.startsWith('Basic ')) return null
+  try {
+    const decoded = atob(header.slice(6))
+    const idx = decoded.indexOf(':')
+    if (idx === -1) return null
+    return { user: decoded.slice(0, idx), pass: decoded.slice(idx + 1) }
+  } catch (e) {
+    return null
+  }
+}
+
+function unauthorized(c) {
+  return c.text('Authentication required.', 401, { 'WWW-Authenticate': `Basic realm="${ADMIN_REALM}"` })
+}
+
+// Returns the $Database (already fetched via c.get('$db')) on success, or
+// null if the request isn't authenticated as admin.
+async function requireAdmin(c) {
+  const db = c.get('$db')
+  const auth = parseBasicAuth(c.req.header('authorization'))
+  if (!auth) return null
+  const rows = await db.rawSQL({ q: "SELECT password_hash, password_salt FROM admin_settings WHERE id = 'main'", v: [] }).run()
+  const rec = rows && rows[0]
+  if (!rec) return null
+  const hash = await sha256Hex(rec.password_salt + ':' + auth.pass)
+  return hash === rec.password_hash ? db : null
+}
+
+function csvEscape(v) {
+  if (v === null || v === undefined) return ''
+  const s = String(v)
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
+}
+
+function toCsv(rows) {
+  const lines = [EXPORT_COLUMNS.join(',')]
+  for (const r of rows) lines.push(EXPORT_COLUMNS.map((col) => csvEscape(r[col])).join(','))
+  return lines.join('\r\n') + '\r\n'
+}
+
+// Minimal RFC4180-style CSV parser: handles quoted fields containing
+// commas, newlines, and doubled-quote escapes.
+function parseCsv(text) {
+  const rows = []
+  let row = []
+  let field = ''
+  let inQuotes = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++ } else { inQuotes = false }
+      } else field += ch
+      continue
+    }
+    if (ch === '"') { inQuotes = true; continue }
+    if (ch === ',') { row.push(field); field = ''; continue }
+    if (ch === '\r') continue
+    if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; continue }
+    field += ch
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row) }
+  if (rows.length === 0) return []
+  const header = rows[0].map((h) => h.trim())
+  return rows.slice(1)
+    .filter((r) => r.some((cell) => cell !== ''))
+    .map((r) => {
+      const obj = {}
+      header.forEach((h, idx) => { obj[h] = r[idx] !== undefined ? r[idx] : '' })
+      return obj
+    })
+}
+
+function adminPage({ notice, ok } = {}) {
+  return html`<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Admin — MINDS MYG EP Project</title>
+<link rel="icon" type="image/png" href="${LOGO_DATA_URI}"/>
+${PAGE_STYLE}
+<style>
+.admin-wrap{max-width:560px;margin:0 auto;padding:28px 16px 60px}
+.admin-wrap h1{font-size:20px;margin:0 0 4px}
+.admin-wrap p.lead{color:var(--ink-soft);font-size:13.5px;margin:0 0 24px}
+.admin-card{background:var(--card);border:1px solid var(--card-border);border-radius:14px;padding:18px 20px;margin-bottom:18px;box-shadow:var(--shadow-sm)}
+.admin-card h2{font-size:14.5px;margin:0 0 10px}
+.admin-card p.hint{font-size:12.5px;color:var(--ink-soft);margin:6px 0 14px}
+.admin-card label{display:block;font-size:12.5px;font-weight:600;margin:10px 0 4px;color:var(--ink-soft)}
+.admin-card input[type=password],.admin-card input[type=file],.admin-card textarea{
+  width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13.5px;
+  background:var(--bg);color:var(--ink);font-family:inherit}
+.admin-card textarea{min-height:100px;resize:vertical}
+.admin-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.admin-btn{border:none;border-radius:8px;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;
+  background:linear-gradient(135deg,var(--accent) 0%,var(--accent-2) 100%);color:#fff}
+.admin-btn.secondary{background:var(--chip-bg);color:var(--ink)}
+.admin-link{display:inline-block;font-size:13px;color:var(--accent-ink);text-decoration:none;font-weight:600}
+.notice{border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:18px}
+.notice.ok{background:var(--accent-soft);color:var(--accent-ink)}
+.notice.err{background:var(--danger-soft);color:var(--danger)}
+.back-link{font-size:13px;color:var(--ink-soft);text-decoration:none;display:inline-block;margin-bottom:16px}
+</style>
+</head><body>
+<div class="admin-wrap">
+  <a class="back-link" href="/">&larr; Back to calendar</a>
+  <h1>Admin portal</h1>
+  <p class="lead">Manage the sessions calendar without touching code.</p>
+  ${notice ? html`<div class="notice ${ok ? 'ok' : 'err'}">${notice}</div>` : ''}
+
+  <div class="admin-card">
+    <h2>Edit sessions</h2>
+    <p class="hint">Add, edit, or delete individual sessions in the built-in table editor.</p>
+    <a class="admin-link" href="/api/v1/pocket/" target="_blank" rel="noopener">Open PocketUI &rarr;</a>
+  </div>
+
+  <div class="admin-card">
+    <h2>Export sessions</h2>
+    <p class="hint">Download every session as a spreadsheet-friendly CSV or as JSON — handy for backups or bulk edits.</p>
+    <div class="admin-actions">
+      <a class="admin-btn" href="/admin/export.csv">Download CSV</a>
+      <a class="admin-btn secondary" href="/admin/export.json">Download JSON</a>
+    </div>
+  </div>
+
+  <div class="admin-card">
+    <h2>Import sessions</h2>
+    <p class="hint">Upload a CSV with the same columns as the export. Rows with a blank <code>id</code> are added as
+      new sessions; rows whose <code>id</code> matches an existing session update it in place. Nothing is ever
+      deleted by import.</p>
+    <form method="post" action="/admin/import" enctype="multipart/form-data">
+      <input type="file" name="file" accept=".csv,text/csv" required/>
+      <div class="admin-actions"><button class="admin-btn" type="submit">Import CSV</button></div>
+    </form>
+  </div>
+
+  <div class="admin-card">
+    <h2>Change admin password</h2>
+    <p class="hint">This password protects this page (export / import). It's separate from PocketUI's own
+      editor/viewer login above — PocketUI's password can't be changed from here.</p>
+    <form method="post" action="/admin/change-password">
+      <label for="new_password">New password</label>
+      <input type="password" id="new_password" name="new_password" minlength="6" required/>
+      <label for="confirm_password">Confirm new password</label>
+      <input type="password" id="confirm_password" name="confirm_password" minlength="6" required/>
+      <div class="admin-actions"><button class="admin-btn" type="submit">Update password</button></div>
+    </form>
+  </div>
+</div>
+</body></html>`
+}
+
+userApp.get('/admin', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+  return c.html(adminPage())
+})
+
+userApp.get('/admin/export.csv', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+  const result = await db.table('sessions').select({ select: EXPORT_COLUMNS, order: 'date', sort: 'asc', limit: 5000 })
+  const rows = Array.isArray(result) ? result : result.items || result.results || []
+  return c.body(toCsv(rows), 200, {
+    'content-type': 'text/csv; charset=utf-8',
+    'content-disposition': 'attachment; filename="sessions.csv"',
+  })
+})
+
+userApp.get('/admin/export.json', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+  const result = await db.table('sessions').select({ select: EXPORT_COLUMNS, order: 'date', sort: 'asc', limit: 5000 })
+  const rows = Array.isArray(result) ? result : result.items || result.results || []
+  return c.body(JSON.stringify(rows, null, 2), 200, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-disposition': 'attachment; filename="sessions.json"',
+  })
+})
+
+userApp.post('/admin/import', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+
+  let text = ''
+  try {
+    const body = await c.req.parseBody()
+    const file = body['file']
+    if (file && typeof file !== 'string' && typeof file.text === 'function') text = await file.text()
+  } catch (e) {
+    return c.html(adminPage({ notice: 'Could not read the uploaded file.', ok: false }), 400)
+  }
+  if (!text.trim()) return c.html(adminPage({ notice: 'No CSV content received.', ok: false }), 400)
+
+  const rows = parseCsv(text)
+  let inserted = 0
+  let updated = 0
+  const errors = []
+
+  for (let i = 0; i < rows.length; i++) {
+    const raw = rows[i]
+    try {
+      const values = {
+        date: raw.date || null,
+        time: raw.time || null,
+        title_en: raw.title_en || null,
+        title_zh: raw.title_zh || null,
+        location_en: raw.location_en || null,
+        location_zh: raw.location_zh || null,
+        description_en: raw.description_en || null,
+        description_zh: raw.description_zh || null,
+        attire_en: raw.attire_en || null,
+        attire_zh: raw.attire_zh || null,
+        vacancy: raw.vacancy !== undefined && String(raw.vacancy).trim() !== '' ? parseInt(raw.vacancy, 10) : null,
+        meals_provided: /^(1|true|yes|y)$/i.test(String(raw.meals_provided || '').trim()) ? 1 : 0,
+        emoji: raw.emoji || null,
+      }
+      const id = String(raw.id || '').trim()
+      let didUpdate = false
+      if (id) {
+        const existing = await db.rawSQL({ q: 'SELECT id FROM sessions WHERE id = ?', v: [id] }).run()
+        if (existing && existing.length) {
+          await db.rawSQL({
+            q: `UPDATE sessions SET date=?, time=?, title_en=?, title_zh=?, location_en=?, location_zh=?,
+                description_en=?, description_zh=?, attire_en=?, attire_zh=?, vacancy=?, meals_provided=?, emoji=?,
+                updated=CURRENT_TIMESTAMP WHERE id=?`,
+            v: [values.date, values.time, values.title_en, values.title_zh, values.location_en, values.location_zh,
+                values.description_en, values.description_zh, values.attire_en, values.attire_zh, values.vacancy,
+                values.meals_provided, values.emoji, id],
+          }).run()
+          updated++
+          didUpdate = true
+        }
+      }
+      if (!didUpdate) {
+        const newId = crypto.randomUUID()
+        await db.rawSQL({
+          q: `INSERT INTO sessions (id, date, time, title_en, title_zh, location_en, location_zh, description_en,
+              description_zh, attire_en, attire_zh, vacancy, meals_provided, emoji)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          v: [newId, values.date, values.time, values.title_en, values.title_zh, values.location_en, values.location_zh,
+              values.description_en, values.description_zh, values.attire_en, values.attire_zh, values.vacancy,
+              values.meals_provided, values.emoji],
+        }).run()
+        inserted++
+      }
+    } catch (e) {
+      errors.push(`Row ${i + 2}: ${e && e.message ? e.message : e}`)
+    }
+  }
+
+  const summary = `Import complete — ${inserted} added, ${updated} updated` +
+    (errors.length ? `, ${errors.length} row(s) failed: ${errors.slice(0, 5).join('; ')}` : '.')
+  return c.html(adminPage({ notice: summary, ok: errors.length === 0 }))
+})
+
+userApp.post('/admin/change-password', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+
+  const body = await c.req.parseBody()
+  const next = String(body['new_password'] || '')
+  const confirm = String(body['confirm_password'] || '')
+  if (next.length < 6) return c.html(adminPage({ notice: 'Password must be at least 6 characters.', ok: false }), 400)
+  if (next !== confirm) return c.html(adminPage({ notice: 'Passwords did not match.', ok: false }), 400)
+
+  const saltBytes = crypto.getRandomValues(new Uint8Array(16))
+  const salt = Array.from(saltBytes).map((b) => b.toString(16).padStart(2, '0')).join('')
+  const hash = await sha256Hex(salt + ':' + next)
+  await db.rawSQL({
+    q: "UPDATE admin_settings SET password_hash = ?, password_salt = ?, updated = CURRENT_TIMESTAMP WHERE id = 'main'",
+    v: [hash, salt],
+  }).run()
+
+  return c.html(adminPage({ notice: 'Password updated. Use it next time you log in to this page.', ok: true }))
 })
 
 userApp.get('/robots.txt', (c) => {

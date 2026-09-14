@@ -30,6 +30,7 @@ const sessions = {
 
     tableField('vacancy', 'integer', 'integer', {}),
     tableField('meals_provided', 'bool', 'boolean', {}),
+    tableField('emoji', 'text', 'text', {}), // optional icon shown on the card, e.g. "🎉" or "🧩"
   ],
   indexes: [{ fields: ['date'] }],
   extensions: [
@@ -48,9 +49,33 @@ const sessions = {
   triggers: [createdTrigger, updatedTrigger],
 }
 
+// Single-row settings store for the custom /admin portal (export / import /
+// change-password). Deliberately locked to `null` (deny) on every rule so
+// it has NO public API at all — worker.ts talks to it only via
+// db.rawSQL(), which bypasses these rules on purpose (see worker.ts).
+const adminSettings = {
+  name: 'admin_settings',
+  fields: [
+    tableField('id', 'text', 'text', { primary: true, notNull: true }),
+    tableField('password_hash', 'text', 'text', { notNull: true }),
+    tableField('password_salt', 'text', 'text', { notNull: true }),
+    tableField('updated', 'date', 'timestamp', { notNull: true, default: sql`CURRENT_TIMESTAMP` }),
+  ],
+  extensions: [
+    {
+      name: 'rules',
+      listRule: null,
+      viewRule: null,
+      createRule: null,
+      updateRule: null,
+      deleteRule: null,
+    },
+  ],
+}
+
 export default {
   appName: 'MINDS MYG EP Sessions',
   appUrl: 'https://myg-ep-sessions.app.teenyapp.com',
   jwtSecret: '$JWT_SECRET_MAIN',
-  tables: [sessions],
+  tables: [sessions, adminSettings],
 }
