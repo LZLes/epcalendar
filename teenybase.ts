@@ -21,6 +21,11 @@ const sessions = {
     // plain string `default:`, unlike `sql`-tagged raw defaults.
     tableField('session_type', 'text', 'text', {}),
 
+    // 'draft' (only visible/editable in /admin) or 'published' (default
+    // when blank/null — shown on the public page). Nullable for the same
+    // reason as session_type above (no plain-string `default:`).
+    tableField('status', 'text', 'text', {}),
+
     tableField('date', 'date', 'date', { notNull: true }),
     // In-house sessions only (free text, e.g. "9:30 AM – 11:30 AM").
     tableField('time', 'text', 'text', {}),

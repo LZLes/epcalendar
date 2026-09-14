@@ -148,20 +148,25 @@ read/written via `db.rawSQL()` since that table's rules are all `null` —
 no public REST route exists for it at all. A blank/`NULL` username in
 the DB is treated as `'admin'` (see `requireAdmin()`). From the page:
 
-- **Sessions list** — every session, soonest first, with an `Outing` tag
-  on outing rows, Edit/Delete per row, and an "+ Add session" button.
-  `GET /admin`.
+- **Sessions list** — every session, soonest first, with a `Draft` tag
+  on draft rows (dimmed row, italic title) and an `Outing` tag on outing
+  rows, Edit/Delete per row, and an "+ Add session" button. `GET /admin`.
 - **Add / edit** — `GET /admin/sessions/new` and
   `GET /admin/sessions/:id/edit` render a form (shared `sessionFormPage()`
   in `worker.ts`) with an In-house/Outing radio toggle that shows/hides
   the relevant field groups (`[data-type-group]`, toggled by a small
   inline script with no backslash escapes at all — sidesteps the gotcha
-  below entirely rather than working around it). `POST` to the same
-  paths validates (`validateSessionValues()`, which requires different
-  fields depending on `session_type`) and writes via `db.rawSQL()` using
-  `insertSessionSQL()`/`updateSessionSQL()` (built from `SESSION_COLUMNS`
-  so new columns only need to be added in one place). A validation
-  failure re-renders the form with what was typed and a 400.
+  below entirely rather than working around it), and two submit buttons —
+  "Save as draft" (`name="intent" value="draft"`) and "Publish"
+  (`value="publish"`) — read in `sessionValuesFromForm()` into
+  `status: 'draft' | 'published'`. `POST` to the same paths validates
+  (`validateSessionValues()`, which requires only a date + title for a
+  draft, and additionally the type-specific fields — location/time or
+  gather/dismissal — before it can be published) and writes via
+  `db.rawSQL()` using `insertSessionSQL()`/`updateSessionSQL()` (built
+  from `SESSION_COLUMNS` so new columns only need to be added in one
+  place). A validation failure re-renders the form with what was typed
+  and a 400.
 - **Delete** — `POST /admin/sessions/:id/delete`, confirmed client-side
   with a plain `confirm()` (uses HTML-entity-escaped quotes in the
   `onsubmit` attribute, not backslash escapes — see the gotcha below for
@@ -207,7 +212,14 @@ needs escaping itself rather than relying on the tag.
 - `session_type` — `'in_house'` (default when blank/null) or `'outing'`.
   Drives which fields are required (`validateSessionValues()`) and how
   the card renders client-side.
-- `date`, `title_en/zh` — always required.
+- `status` — `'published'` (default when blank/null) or `'draft'`.
+  Drafts are only visible/editable in `/admin`; the public `/` route
+  filters them out **server-side** (a `WHERE status IS NULL OR status !=
+  'draft'` in raw SQL, not a client-side hide) since the whole page is
+  rendered from an embedded JSON blob a draft must never reach in the
+  first place. See "Admin portal" above for how a session becomes a
+  draft or gets published.
+- `date`, `title_en/zh` — always required, even for a draft.
 - **In-house fields:** `location_en/zh`, `time` (free text, e.g.
   "9:30 AM – 11:30 AM"). Required when `session_type` is `'in_house'`.
 - **Outing fields:** `gather_point_en/zh`, `gather_time`,
@@ -252,12 +264,13 @@ field or a missing row both fall back to `DEFAULT_ICONS`.
   bug here once, see git history).
 - Dark mode: auto-detects `prefers-color-scheme`, with a manual toggle
   that overrides and persists to `localStorage`.
-- Font size: a two-step "A−"/"A+" control cycles through `FS_STEPS`
-  (defined identically in `CLIENT_SCRIPT` and in the pre-paint script in
-  `layout()`, to avoid a flash/jump on load), applied via the `--fs` CSS
-  custom property — text sizes in `PAGE_STYLE` are `calc(Npx * var(--fs))`
-  rather than plain `px` so they scale together. Persisted to
-  `localStorage` as an index, not a raw scale value.
+- Font size: an "A−"/"A+" control cycles through `FS_STEPS` (currently
+  `[0.85, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2]` — defined identically in
+  `CLIENT_SCRIPT` and in the pre-paint script in `layout()`, to avoid a
+  flash/jump on load; keep both in sync if this ever changes), applied
+  via the `--fs` CSS custom property — text sizes in `PAGE_STYLE` are
+  `calc(Npx * var(--fs))` rather than plain `px` so they scale together.
+  Persisted to `localStorage` as an index, not a raw scale value.
 - Sticky month headers: `.month-label` is `position: sticky` with
   `top: var(--header-h)`, where `--header-h` is the live height of the
   sticky top `header.top` (which itself changes with font size,

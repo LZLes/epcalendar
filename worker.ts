@@ -55,7 +55,7 @@ function layout(c, pageTitle, pageDesc, bodyHtml) {
     if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-theme', saved);
   } catch (e) {}
   try {
-    var FS_STEPS = [0.9, 0.95, 1, 1.08, 1.16, 1.26];
+    var FS_STEPS = [0.85, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2];
     var savedFs = localStorage.getItem('ep-fontscale-idx');
     var idx = savedFs !== null ? parseInt(savedFs, 10) : 2;
     if (!(idx >= 0 && idx < FS_STEPS.length)) idx = 2;
@@ -511,7 +511,7 @@ const CLIENT_SCRIPT = raw(`<script>
   // custom property so text sizes defined as calc(Npx * var(--fs)) in
   // PAGE_STYLE scale together). Steps and default index are duplicated
   // in layout()'s pre-paint script to avoid a flash on load.
-  var FS_STEPS = [0.9, 0.95, 1, 1.08, 1.16, 1.26];
+  var FS_STEPS = [0.85, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2];
   var FS_DEFAULT_INDEX = 2;
   function loadFsIndex() {
     try {
@@ -654,14 +654,16 @@ async function getIconRow(c) {
 
 userApp.get('/', async (c) => {
   const db = c.get('$db')
-  const result = await db.table('sessions').select({
-    select: SESSION_COLUMNS,
-    order: 'date',
-    sort: 'asc',
-    limit: 1000,
-  })
-  const items = Array.isArray(result) ? result : result.items || result.results || []
-  const rows = items.map((r) => ({
+  // rawSQL rather than $Table.select() here (unlike the rest of the
+  // public-read paths) specifically to filter out drafts server-side —
+  // draft sessions must never reach the browser at all, since the whole
+  // page is rendered client-side from an embedded JSON blob of whatever
+  // this query returns.
+  const items = await db.rawSQL({
+    q: `SELECT ${SESSION_COLUMNS.join(', ')} FROM sessions WHERE status IS NULL OR status != 'draft' ORDER BY date ASC LIMIT 1000`,
+    v: [],
+  }).run()
+  const rows = (items || []).map((r) => ({
     ...r,
     session_type: r.session_type === 'outing' ? 'outing' : 'in_house',
     meals_provided: !!r.meals_provided,
@@ -695,7 +697,7 @@ const ADMIN_REALM = 'EP Admin'
 // 'session_type' first, followed by the in-house fields (location/time),
 // the outing fields (gather/dismissal), then the fields common to both.
 const SESSION_COLUMNS = [
-  'session_type', 'date', 'time', 'title_en', 'title_zh', 'location_en', 'location_zh',
+  'session_type', 'status', 'date', 'time', 'title_en', 'title_zh', 'location_en', 'location_zh',
   'gather_point_en', 'gather_point_zh', 'gather_time',
   'dismissal_point_en', 'dismissal_point_zh', 'dismissal_time',
   'description_en', 'description_zh', 'attire_en', 'attire_zh',
@@ -728,6 +730,10 @@ function sessionValuesFromForm(body) {
   const str = (k) => (String(body[k] || '').trim() || null)
   return {
     session_type: body.session_type === 'outing' ? 'outing' : 'in_house',
+    // Which submit button was clicked — 'draft' (name="intent"
+    // value="draft") or 'publish' (the default when the intent is
+    // missing/unrecognized, so an old bookmarked form still publishes).
+    status: body.intent === 'draft' ? 'draft' : 'published',
     date: str('date'),
     time: str('time'),
     title_en: str('title_en'),
@@ -753,6 +759,11 @@ function sessionValuesFromForm(body) {
 function validateSessionValues(v) {
   if (!v.date) return 'Date is required.'
   if (!v.title_en || !v.title_zh) return 'Title (EN and 中文) is required.'
+  // Drafts skip the type-specific requirements below (deliberately — the
+  // point of a draft is being able to save a session that isn't fully
+  // filled in yet). They still need a date and a title so they're
+  // findable in the sessions list.
+  if (v.status === 'draft') return null
   if (v.session_type === 'outing') {
     if (!v.gather_point_en || !v.gather_point_zh) return 'Gather point (EN and 中文) is required for outings.'
     if (!v.gather_time) return 'Gather time is required for outings.'
@@ -894,6 +905,9 @@ const ADMIN_STYLE = raw(`<style>
 .type-radio input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
 .session-row .meta .tag{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;
   color:var(--accent-ink);background:var(--accent-soft);border-radius:5px;padding:1px 6px;margin-right:6px;vertical-align:1px}
+.session-row .meta .tag.draft{color:var(--ink-soft);background:var(--chip-bg)}
+.session-row.is-draft{opacity:.7}
+.session-row.is-draft .meta .t{font-style:italic}
 </style>`)
 
 function adminHeader(title) {
@@ -924,13 +938,15 @@ function adminPage({ notice, ok, sessions, username, icons } = {}) {
       ? html`<p class="empty-hint">No sessions yet.</p>`
       : raw(rows.map((s) => {
           const isOuting = s.session_type === 'outing'
+          const isDraft = s.status === 'draft'
           const timeLabel = isOuting
             ? [s.gather_time, s.dismissal_time].filter(Boolean).join(' – ')
             : (s.time || '')
           return (
-            '<div class="session-row">' +
+            '<div class="session-row' + (isDraft ? ' is-draft' : '') + '">' +
               '<div class="meta">' +
-                '<div class="d">' + (isOuting ? '<span class="tag">Outing</span>' : '') +
+                '<div class="d">' + (isDraft ? '<span class="tag draft">Draft</span>' : '') +
+                  (isOuting ? '<span class="tag">Outing</span>' : '') +
                   escHtml(s.date) + (timeLabel ? ' &middot; ' + escHtml(timeLabel) : '') + '</div>' +
                 '<div class="t">' + (s.emoji ? escHtml(s.emoji) + ' ' : '') + escHtml(s.title_en || s.title_zh || '(untitled)') + '</div>' +
               '</div>' +
@@ -1028,11 +1044,14 @@ function sessionFormPage({ session, action, title, notice, ok } = {}) {
   const s = session || {}
   const val = (k) => escHtml(s[k])
   const type = s.session_type === 'outing' ? 'outing' : 'in_house'
+  const isDraft = s.status === 'draft'
   return html`<!doctype html><html lang="en"><head>${adminHeader(title)}</head><body>
 <div class="admin-wrap narrow">
   <a class="back-link" href="/admin">&larr; Back to admin</a>
-  <h1>${title}</h1>
+  <h1>${title}${isDraft ? html` <span class="tag draft" style="font-size:11px">Draft</span>` : ''}</h1>
   ${notice ? html`<div class="notice ${ok ? 'ok' : 'err'}">${notice}</div>` : ''}
+  <p class="lead" style="margin-bottom:14px">Save as draft to keep working on this without it showing on the
+    public calendar, or Publish to make it live.</p>
   <div class="admin-card">
     <form method="post" action="${action}">
       <div class="field-pair">
@@ -1102,7 +1121,8 @@ function sessionFormPage({ session, action, title, notice, ok } = {}) {
       </div>
 
       <div class="admin-actions">
-        <button class="admin-btn" type="submit">Save session</button>
+        <button class="admin-btn secondary" type="submit" name="intent" value="draft">Save as draft</button>
+        <button class="admin-btn" type="submit" name="intent" value="publish">Publish</button>
         <a class="admin-btn secondary" href="/admin">Cancel</a>
       </div>
     </form>
@@ -1270,6 +1290,7 @@ userApp.post('/admin/import', async (c) => {
     try {
       const values = {
         session_type: raw.session_type === 'outing' ? 'outing' : 'in_house',
+        status: raw.status === 'draft' ? 'draft' : 'published',
         date: raw.date || null,
         time: raw.time || null,
         title_en: raw.title_en || null,
