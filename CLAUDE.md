@@ -21,9 +21,9 @@ database + R2 bucket. No end-user registration; admin manages sessions.
 
 ## How this repo maps to teenyapp
 
-- `teenybase.ts` — schema (`sessions`, `admin_settings` tables), row-level
-  access rules. Editing this and saving regenerates `@migration.sql`
-  automatically.
+- `teenybase.ts` — schema (`sessions`, `admin_settings`, `icon_settings`
+  tables), row-level access rules. Editing this and saving regenerates
+  `@migration.sql` automatically.
 - `worker.ts` — the whole app: SSR page at `/`, the `/admin` portal routes,
   and `/robots.txt` / `/sitemap.xml` / `/llms.txt`.
 - `assets/eastpoint-logo.png` — the project owner's original logo file
@@ -60,10 +60,32 @@ new conversation) and don't have one in context:
    first). This triggers an immediate build; branch on `success`/
    `result.bundle.ok`/`result.config.ok`, not just HTTP status.
 3. If the schema changed, `@migration.sql` is regenerated — **read it**
-   before committing. Hand-edit it only to add data (INSERT/UPDATE), never
-   to change DDL (edit `teenybase.ts` for that, which regenerates the
-   file and clobbers hand-edits — that's why data seeds go in as a
-   *separate* edit after the schema save, per teenyapp's own docs).
+   before committing.
+   **Do not hand-edit `@migration.sql` to add data.** This was tried and
+   confirmed *not* to work: `@migration.sql` is recomputed from scratch
+   (pure DDL, from a live-schema vs. `teenybase.ts` diff) on *every* file
+   save, including a save of `@migration.sql` itself — whatever you PUT
+   to it is discarded and replaced by the regenerated version before the
+   response even comes back. There is no way to persist a hand-added
+   `INSERT`/`UPDATE` through this endpoint. If a new column or table
+   needs an initial value, do one of:
+   - Give the column a **DB-level default** in `teenybase.ts` — but only
+     with `default: sql\`...\`` (a raw SQL expression/keyword, e.g.
+     `CURRENT_TIMESTAMP`). **`default: 'some string'` is broken**: this
+     teenyapp version emits it unquoted into the generated DDL (e.g.
+     `DEFAULT in_house`, `DEFAULT admin` — invalid SQL, fails the
+     `commit`). Confirmed by reading the raw `@migration.sql` bytes via
+     `GET $BASE/files?path=@migration.sql` (the JSON-embedded preview in
+     a PUT response can look fine at a glance — always check the raw
+     file). Leave a text column nullable instead and handle the default
+     in `worker.ts`.
+   - Or (used throughout this app): leave the column nullable, and have
+     `worker.ts` **self-heal** — read with a fallback default
+     (`row.field || DEFAULT_X`), and have the write path `INSERT ...
+     VALUES (...) ON CONFLICT(id) DO UPDATE SET ...` (upsert) so the row
+     is created correctly the first time anyone saves through the admin
+     UI, no pre-seeding needed at all. See `icon_settings` / `getIconRow`
+     / `POST /admin/icons` for the full pattern.
 4. `POST $BASE/commit {"message": "..."}` — promotes config and runs the
    migration against the live D1 database. Nothing is live/durable until
    this step.
@@ -120,29 +142,50 @@ source characters. Instead:
 Built because PocketUI's own login password can't be changed via the
 agent API, and PocketUI has no export/import. Covers full session CRUD,
 so PocketUI is optional (kept as an alternate link on the page, not
-removed). `/admin` is HTTP Basic Auth (any username, password checked
-against `admin_settings.password_hash`, salted SHA-256, both columns
+removed). `/admin` is HTTP Basic Auth checked against
+`admin_settings.username`/`password_hash` (salted SHA-256), both columns
 read/written via `db.rawSQL()` since that table's rules are all `null` —
-no public REST route exists for it at all). From the page:
+no public REST route exists for it at all. A blank/`NULL` username in
+the DB is treated as `'admin'` (see `requireAdmin()`). From the page:
 
-- **Sessions list** — every session, soonest first, with Edit/Delete per
-  row and an "+ Add session" button. `GET /admin`.
+- **Sessions list** — every session, soonest first, with an `Outing` tag
+  on outing rows, Edit/Delete per row, and an "+ Add session" button.
+  `GET /admin`.
 - **Add / edit** — `GET /admin/sessions/new` and
   `GET /admin/sessions/:id/edit` render a form (shared `sessionFormPage()`
-  in `worker.ts`); `POST` to the same paths validates
-  (`validateSessionValues()`) and writes via `db.rawSQL()`. A validation
+  in `worker.ts`) with an In-house/Outing radio toggle that shows/hides
+  the relevant field groups (`[data-type-group]`, toggled by a small
+  inline script with no backslash escapes at all — sidesteps the gotcha
+  below entirely rather than working around it). `POST` to the same
+  paths validates (`validateSessionValues()`, which requires different
+  fields depending on `session_type`) and writes via `db.rawSQL()` using
+  `insertSessionSQL()`/`updateSessionSQL()` (built from `SESSION_COLUMNS`
+  so new columns only need to be added in one place). A validation
   failure re-renders the form with what was typed and a 400.
 - **Delete** — `POST /admin/sessions/:id/delete`, confirmed client-side
   with a plain `confirm()` (uses HTML-entity-escaped quotes in the
-  `onsubmit` attribute, not backslash escapes — see the gotcha above for
+  `onsubmit` attribute, not backslash escapes — see the gotcha below for
   why that distinction matters here).
 - **Export** — `/admin/export.csv` and `/admin/export.json`, all session
   columns including `id`.
 - **Import** — `/admin/import`, multipart CSV upload. A row with a blank
   `id` is inserted as new; a row whose `id` matches an existing session
   updates it in place. **Nothing is ever deleted by import.**
-- **Change password** — updates `admin_settings` with a fresh random
-  salt + hash. This password is unrelated to PocketUI's.
+- **Customize icons** — `POST /admin/icons`, upserts the single
+  `icon_settings` row (`id = 'main'`) with the emoji shown next to the
+  add-to-calendar button, location, attire, meals, gather point, and
+  dismissal point on the public page. A blank field falls back to
+  `DEFAULT_ICONS` (mirrored in `worker.ts` server-side and in
+  `CLIENT_SCRIPT` client-side — the two can't share a module). This
+  upsert is also what *creates* the row the first time — no migration
+  seeding needed (see the "Making changes" note on why that doesn't
+  work here).
+- **Admin login** — `POST /admin/change-username` (3–40 chars,
+  `[A-Za-z0-9_.@-]`) and `POST /admin/change-password` (updates
+  `admin_settings` with a fresh random salt + hash). Both are unrelated
+  to PocketUI's own login. Changing either invalidates the browser's
+  cached Basic Auth credentials immediately — same as before for the
+  password alone.
 
 All writes (add/edit/delete/import) go through `db.rawSQL()`
 (parameterized), not `$Table` methods — the `sessions` table's own
@@ -161,22 +204,45 @@ needs escaping itself rather than relying on the tag.
 
 ## Schema (sessions table)
 
-`date`, `time` (free text, e.g. "9:30 AM – 11:30 AM"), `title_en/zh`,
-`location_en/zh`, `description_en/zh` (optional), `attire_en/zh`
-(optional), `vacancy` (integer, optional), `meals_provided` (bool,
-optional), `emoji` (text, optional — shown before the title on the card).
-To add a field: add it to `sessions.fields` in `teenybase.ts`, save
-(regenerates the migration), review it, commit — then also add it to
-`SESSION_COLUMNS`/`EXPORT_COLUMNS` and the CSV import mapping in
-`worker.ts` if it should show up in export/import too, and to the SSR
-`select` list / card renderer if it should appear on the public page.
+- `session_type` — `'in_house'` (default when blank/null) or `'outing'`.
+  Drives which fields are required (`validateSessionValues()`) and how
+  the card renders client-side.
+- `date`, `title_en/zh` — always required.
+- **In-house fields:** `location_en/zh`, `time` (free text, e.g.
+  "9:30 AM – 11:30 AM"). Required when `session_type` is `'in_house'`.
+- **Outing fields:** `gather_point_en/zh`, `gather_time`,
+  `dismissal_point_en/zh`, `dismissal_time` (all free text). Required
+  when `session_type` is `'outing'`. The public card shows these instead
+  of a location pill, plus an "Outing" badge, and derives its
+  date-row time range as `gather_time – dismissal_time`.
+- `description_en/zh` (optional), `attire_en/zh` (optional), `vacancy`
+  (integer, optional), `meals_provided` (bool, optional), `emoji` (text,
+  optional — shown before the title on the card).
+
+To add a field: add it to `sessions.fields` in `teenybase.ts` (nullable,
+**not** a plain string `default:` — see the "Making changes" note above),
+save (regenerates the migration), review it, commit — then also add it to
+`SESSION_COLUMNS` in `worker.ts` (this alone covers `EXPORT_COLUMNS`,
+the insert/update SQL, and the SSR `select` list, since all three are
+derived from it) and to the CSV import mapping and the card renderer in
+`CLIENT_SCRIPT` if it should appear on the public page.
+
+## Icon customization (`icon_settings` table)
+
+Single-row (`id = 'main'`) table of the emoji shown for each recurring
+category: `icon_date`, `icon_location`, `icon_attire`, `icon_meals`,
+`icon_gather`, `icon_dismissal`. Public read (`listRule`/`viewRule:
+'true'`, same as `sessions`) so the SSR `/` route can pass them to the
+client via `window.__ICONS_B64__`; no public write (writes go through
+`POST /admin/icons`, an upsert — see "Admin portal" above). A blank
+field or a missing row both fall back to `DEFAULT_ICONS`.
 
 ## Frontend behavior worth knowing
 
 - All rendering is client-side from an embedded, base64-encoded JSON
-  blob (see gotcha above) — no client→server fetch after the initial
-  page load. Language toggle, "show past sessions", and dark mode are
-  all instant, no reload.
+  blob (see gotcha below) — no client→server fetch after the initial
+  page load. Language toggle, "show past sessions", dark mode, font
+  size, and the outing/in-house card layout are all instant, no reload.
 - "Upcoming" is computed against *today in Asia/Singapore time*
   (`Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Singapore'})`), not the
   visitor's local timezone.
@@ -186,3 +252,14 @@ To add a field: add it to `sessions.fields` in `teenybase.ts`, save
   bug here once, see git history).
 - Dark mode: auto-detects `prefers-color-scheme`, with a manual toggle
   that overrides and persists to `localStorage`.
+- Font size: a two-step "A−"/"A+" control cycles through `FS_STEPS`
+  (defined identically in `CLIENT_SCRIPT` and in the pre-paint script in
+  `layout()`, to avoid a flash/jump on load), applied via the `--fs` CSS
+  custom property — text sizes in `PAGE_STYLE` are `calc(Npx * var(--fs))`
+  rather than plain `px` so they scale together. Persisted to
+  `localStorage` as an index, not a raw scale value.
+- Sticky month headers: `.month-label` is `position: sticky` with
+  `top: var(--header-h)`, where `--header-h` is the live height of the
+  sticky top `header.top` (which itself changes with font size,
+  language, and narrow-screen wrapping) — kept in sync by a
+  `ResizeObserver` on the header in `CLIENT_SCRIPT`, not a fixed value.

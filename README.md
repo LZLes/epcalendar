@@ -7,9 +7,10 @@ registration or login.
 Built on [teenyapp.com](https://teenyapp.com), project slug `myg-ep-sessions`.
 
 - **Live site:** https://myg-ep-sessions.app.teenyapp.com
-- **Admin portal:** `/admin` — add/edit/delete sessions, bulk export/
-  import (CSV + JSON), and its own changeable password. The main way to
-  manage sessions day to day. See `CLAUDE.md` for details.
+- **Admin portal:** `/admin` — add/edit/delete sessions (in-house or
+  outing), bulk export/import (CSV + JSON), customizable calendar icons,
+  and its own changeable username + password. The main way to manage
+  sessions day to day. See `CLAUDE.md` for details.
 - **PocketUI (optional):** `/api/v1/pocket/` — the built-in raw table
   editor, still there as a fallback. Credentials aren't stored in this
   repo — see the project dashboard, or the chat this was set up in.

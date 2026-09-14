@@ -48,11 +48,18 @@ function layout(c, pageTitle, pageDesc, bodyHtml) {
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script type="application/ld+json">${raw(jsonLd)}</script>
 <script>
-// Set theme class before first paint to avoid a light/dark flash.
+// Set theme + font-size before first paint to avoid a flash/jump.
 (function () {
   try {
     var saved = localStorage.getItem('ep-theme');
     if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-theme', saved);
+  } catch (e) {}
+  try {
+    var FS_STEPS = [0.9, 0.95, 1, 1.08, 1.16, 1.26];
+    var savedFs = localStorage.getItem('ep-fontscale-idx');
+    var idx = savedFs !== null ? parseInt(savedFs, 10) : 2;
+    if (!(idx >= 0 && idx < FS_STEPS.length)) idx = 2;
+    document.documentElement.style.setProperty('--fs', String(FS_STEPS[idx]));
   } catch (e) {}
 })();
 </script>
@@ -72,6 +79,7 @@ const PAGE_STYLE = raw(`<style>
   --border:#e6e4dd; --chip-bg:#f0efe9; --danger:#b3413a; --danger-soft:#fbe9e6;
   --shadow-sm:0 1px 2px rgba(20,25,20,.05); --shadow-md:0 8px 24px -12px rgba(20,40,30,.18);
   --header-bg:rgba(246,245,241,.82);
+  --fs:1; --header-h:64px;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){
@@ -113,13 +121,18 @@ header.top{
 .brand .logo-slot{width:44px;height:44px;border-radius:12px;flex-shrink:0;overflow:hidden;
   display:flex;align-items:center;justify-content:center}
 .brand .logo-slot img,.brand .logo-slot svg{width:100%;height:100%;display:block;object-fit:contain}
-.brand h1{font-size:17px;margin:0;font-weight:800;line-height:1.25;letter-spacing:-.01em}
-.brand p{margin:1px 0 0;font-size:12px;color:var(--ink-soft)}
-.controls{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.brand h1{font-size:calc(17px * var(--fs));margin:0;font-weight:800;line-height:1.25;letter-spacing:-.01em}
+.brand p{margin:1px 0 0;font-size:calc(12px * var(--fs));color:var(--ink-soft)}
+.controls{display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}
 .lang-toggle{display:inline-flex;border:1px solid var(--border);border-radius:999px;background:var(--card);padding:3px;box-shadow:var(--shadow-sm)}
-.lang-toggle button{border:none;background:transparent;padding:6px 13px;border-radius:999px;font-size:13px;font-weight:600;
+.lang-toggle button{border:none;background:transparent;padding:6px 13px;border-radius:999px;font-size:calc(13px * var(--fs));font-weight:600;
   color:var(--ink-soft);cursor:pointer;transition:background-color .15s ease,color .15s ease}
 .lang-toggle button.active{background:linear-gradient(135deg,var(--accent) 0%,var(--accent-2) 100%);color:#fff}
+.fs-toggle{display:inline-flex;border:1px solid var(--border);border-radius:999px;background:var(--card);padding:3px;box-shadow:var(--shadow-sm)}
+.fs-toggle button{border:none;background:transparent;padding:6px 11px;border-radius:999px;font-size:13px;font-weight:700;
+  color:var(--ink-soft);cursor:pointer;transition:background-color .15s ease,color .15s ease}
+.fs-toggle button:hover:not(:disabled){background:var(--chip-bg);color:var(--ink)}
+.fs-toggle button:disabled{opacity:.35;cursor:default}
 .theme-toggle{width:34px;height:34px;border-radius:999px;border:1px solid var(--border);background:var(--card);
   color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--shadow-sm);
   flex-shrink:0;transition:color .15s ease}
@@ -136,39 +149,42 @@ header.top{
 :root[data-theme="light"] .theme-toggle .sun{display:none}
 :root[data-theme="light"] .theme-toggle .moon{display:block}
 .subhead{margin:4px 0 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.subhead h2{font-size:12.5px;margin:0;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.07em}
-.past-toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);cursor:pointer;user-select:none}
+.subhead h2{font-size:calc(12.5px * var(--fs));margin:0;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.07em}
+.past-toggle{display:flex;align-items:center;gap:8px;font-size:calc(13px * var(--fs));color:var(--ink-soft);cursor:pointer;user-select:none}
 .past-toggle input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
 .month-group{margin-bottom:24px}
-.month-label{font-size:13px;font-weight:800;color:var(--accent-ink);margin:0 0 10px;padding-left:2px;letter-spacing:-.01em}
+.month-label{position:sticky;top:var(--header-h);z-index:10;background:var(--bg);
+  font-size:calc(13px * var(--fs));font-weight:800;color:var(--accent-ink);margin:0 0 10px;
+  padding:10px 2px 8px;letter-spacing:-.01em;border-bottom:1px solid var(--border)}
 .card{background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:16px 17px;margin-bottom:12px;
   box-shadow:var(--shadow-sm); transition:transform .15s ease,box-shadow .15s ease,opacity .15s ease}
 @media(hover:hover){.card:not(.is-past):hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}}
 .card.is-past{opacity:.55}
 .card .date-row{display:flex;justify-content:space-between;gap:10px;align-items:baseline;margin-bottom:7px}
-.card .date-line{font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.03em}
-.card .time-line{font-size:12.5px;color:var(--ink-soft);white-space:nowrap;font-weight:500}
-.card h3{margin:0 0 9px;font-size:16.5px;font-weight:750;line-height:1.32;letter-spacing:-.01em}
+.card .date-line{font-size:calc(12px * var(--fs));font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.03em}
+.card .time-line{font-size:calc(12.5px * var(--fs));color:var(--ink-soft);white-space:nowrap;font-weight:500}
+.card h3{margin:0 0 9px;font-size:calc(16.5px * var(--fs));font-weight:750;line-height:1.32;letter-spacing:-.01em}
 .card .meta-row{display:flex;flex-wrap:wrap;gap:6px 8px;margin-bottom:8px}
-.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-soft);background:var(--chip-bg);
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:calc(12px * var(--fs));color:var(--ink-soft);background:var(--chip-bg);
   border-radius:999px;padding:4px 10px;font-weight:500}
 .pill.vacancy-low{color:var(--danger);background:var(--danger-soft)}
 .pill.vacancy-ok{color:var(--accent-ink);background:var(--accent-soft)}
-.card p.desc{margin:7px 0 0;font-size:13.5px;color:var(--ink-soft);white-space:pre-line}
+.pill.pill-outing{color:var(--accent-ink);background:var(--accent-soft);font-weight:700}
+.card p.desc{margin:7px 0 0;font-size:calc(13.5px * var(--fs));color:var(--ink-soft);white-space:pre-line}
 .card-emoji{margin-right:7px;font-size:1.05em}
 .cal-btn{margin-top:11px;border:1px solid var(--border);background:var(--chip-bg);color:var(--ink-soft);
-  font-size:12px;font-weight:600;padding:6px 12px;border-radius:999px;cursor:pointer;transition:background-color .15s ease,color .15s ease}
+  font-size:calc(12px * var(--fs));font-weight:600;padding:6px 12px;border-radius:999px;cursor:pointer;transition:background-color .15s ease,color .15s ease}
 .cal-btn:hover{background:var(--accent-soft);color:var(--accent-ink)}
 .empty-state{text-align:center;padding:56px 16px;color:var(--ink-soft)}
 .empty-state .big{font-size:30px;margin-bottom:10px}
-footer.note{max-width:640px;margin:20px auto 0;padding:0 16px;font-size:11.5px;color:var(--ink-faint);text-align:center}
+footer.note{max-width:640px;margin:20px auto 0;padding:0 16px;font-size:calc(11.5px * var(--fs));color:var(--ink-faint);text-align:center}
 .tb-ribbon{width:12.1em;height:12.1em;position:fixed;overflow:hidden;bottom:0;right:0;z-index:9999;pointer-events:none;font-size:13px;text-decoration:none;text-indent:-999999px}
 .tb-ribbon:active,.tb-ribbon:hover{background-color:transparent}
 .tb-ribbon:after,.tb-ribbon:before{position:absolute;display:block;width:15.38em;height:1.54em;bottom:3.23em;right:-3.23em;box-sizing:content-box;transform:rotate(-45deg)}
 .tb-ribbon:before{content:"";padding:.38em 0;background-color:#0f172a;background-image:linear-gradient(to bottom,rgba(0,0,0,0),rgba(0,0,0,.15));box-shadow:0 .15em .23em 0 rgba(0,0,0,.5);pointer-events:auto;opacity:.45;transition:opacity .2s}
 .tb-ribbon:hover:before{opacity:.9}
 .tb-ribbon:after{content:attr(data-ribbon);color:#f8fafc;font:500 1em system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.54em;text-decoration:none;text-shadow:0 -.08em rgba(0,0,0,.5);text-align:center;text-indent:0;padding:.15em 0;margin:.15em 0;border-width:.08em 0;border-style:dotted;border-color:rgba(255,255,255,.7)}
-@media(max-width:360px){.brand h1{font-size:15px}}
+@media(max-width:360px){.brand h1{font-size:calc(15px * var(--fs))}}
 </style>`)
 
 // Eastpoint "EP" logo — the project owner's original artwork, embedded
@@ -185,11 +201,14 @@ const I18N = {
     vacancyFull: 'Fully booked',
     meals: 'Meals provided',
     attire: 'Attire',
+    gather: 'Gather',
+    dismissal: 'Dismissal',
+    outingBadge: '🚌 Outing',
     emptyTitle: 'No sessions scheduled',
     emptyBody: 'Check back soon — new sessions will appear here as they are added.',
     emptyPastBody: 'No sessions to show yet.',
     footer: 'All times are Singapore time (SGT).',
-    addToCalendar: '📅 Add to calendar',
+    addToCalendar: 'Add to calendar',
   },
   zh: {
     title: 'MINDS MYG EP 计划',
@@ -199,12 +218,29 @@ const I18N = {
     vacancyFull: '名额已满',
     meals: '提供餐点',
     attire: '服装要求',
+    gather: '集合',
+    dismissal: '解散',
+    outingBadge: '🚌 外出活动',
     emptyTitle: '暂无场次安排',
     emptyBody: '请稍后再查看，新的场次会在这里显示。',
     emptyPastBody: '暂无可显示的场次。',
     footer: '所有时间均为新加坡时间 (SGT)。',
-    addToCalendar: '📅 加入日历',
+    addToCalendar: '加入日历',
   },
+}
+
+// Default category icons — used whenever the admin hasn't customized them
+// (icon_settings row missing or a field left blank). Kept in sync with
+// the identical DEFAULT_ICONS map inside CLIENT_SCRIPT below (client
+// code can't import from here — it's a separate template literal that
+// becomes a standalone <script>).
+const DEFAULT_ICONS = {
+  date: '📅',
+  location: '📍',
+  attire: '👕',
+  meals: '🍽️',
+  gather: '🚏',
+  dismissal: '🏁',
 }
 
 // Renders the initial (server-side) HTML shell. All actual list
@@ -228,6 +264,12 @@ const CLIENT_SCRIPT = raw(`<script>
   }
   window.__SESSIONS__ = JSON.parse(fromBase64Utf8(window.__SESSIONS_B64__));
   window.__I18N__ = JSON.parse(fromBase64Utf8(window.__I18N_B64__));
+
+  var DEFAULT_ICONS = { date: '📅', location: '📍', attire: '👕', meals: '🍽️', gather: '🚏', dismissal: '🏁' };
+  var icons = {};
+  try { icons = JSON.parse(fromBase64Utf8(window.__ICONS_B64__)) || {}; } catch (e) {}
+  Object.keys(DEFAULT_ICONS).forEach(function (k) { if (!icons[k]) icons[k] = DEFAULT_ICONS[k]; });
+  window.__ICONS__ = icons;
 
   function todayISO() {
     // YYYY-MM-DD in Singapore time, robust across browsers via en-CA locale.
@@ -306,10 +348,32 @@ const CLIENT_SCRIPT = raw(`<script>
     var htmlOut = groups.map(function (g) {
       var cards = g.items.map(function (r) {
         var isPast = r.date < today;
+        var isOuting = r.session_type === 'outing';
         var title = state.lang === 'zh' ? (r.title_zh || r.title_en) : (r.title_en || r.title_zh);
         var location = state.lang === 'zh' ? (r.location_zh || r.location_en) : (r.location_en || r.location_zh);
+        var gatherPoint = state.lang === 'zh' ? (r.gather_point_zh || r.gather_point_en) : (r.gather_point_en || r.gather_point_zh);
+        var dismissalPoint = state.lang === 'zh' ? (r.dismissal_point_zh || r.dismissal_point_en) : (r.dismissal_point_en || r.dismissal_point_zh);
         var desc = state.lang === 'zh' ? r.description_zh : r.description_en;
         var attire = state.lang === 'zh' ? r.attire_zh : r.attire_en;
+
+        var timeDisplay = isOuting
+          ? [r.gather_time, r.dismissal_time].filter(Boolean).join(' – ')
+          : (r.time || '');
+
+        var placePills = '';
+        if (isOuting) {
+          placePills += '<span class="pill pill-outing">' + esc(t.outingBadge) + '</span>';
+          if (gatherPoint) {
+            placePills += '<span class="pill">' + icons.gather + ' ' + esc(t.gather) + ': ' + esc(gatherPoint) +
+              (r.gather_time ? ' · ' + esc(r.gather_time) : '') + '</span>';
+          }
+          if (dismissalPoint) {
+            placePills += '<span class="pill">' + icons.dismissal + ' ' + esc(t.dismissal) + ': ' + esc(dismissalPoint) +
+              (r.dismissal_time ? ' · ' + esc(r.dismissal_time) : '') + '</span>';
+          }
+        } else if (location) {
+          placePills += '<span class="pill">' + icons.location + ' ' + esc(location) + '</span>';
+        }
 
         var pills = '';
         if (typeof r.vacancy === 'number') {
@@ -318,30 +382,31 @@ const CLIENT_SCRIPT = raw(`<script>
             esc(low ? t.vacancyFull : vacancyText(state.lang, r.vacancy)) + '</span>';
         }
         if (r.meals_provided) {
-          pills += '<span class="pill">' + esc(t.meals) + '</span>';
+          pills += '<span class="pill">' + icons.meals + ' ' + esc(t.meals) + '</span>';
         }
         if (attire) {
-          pills += '<span class="pill">' + esc(t.attire) + ': ' + esc(attire) + '</span>';
+          pills += '<span class="pill">' + icons.attire + ' ' + esc(t.attire) + ': ' + esc(attire) + '</span>';
         }
 
+        var icsLocation = isOuting ? (gatherPoint || dismissalPoint || '') : location;
         var icsAttrs =
           ' data-ics-date="' + esc(r.date) + '"' +
-          ' data-ics-time="' + esc(r.time || '') + '"' +
+          ' data-ics-time="' + esc(timeDisplay) + '"' +
           ' data-ics-title="' + esc(title) + '"' +
-          ' data-ics-location="' + esc(location || '') + '"' +
+          ' data-ics-location="' + esc(icsLocation || '') + '"' +
           ' data-ics-desc="' + esc(desc || '') + '"';
 
         return (
           '<div class="card' + (isPast ? ' is-past' : '') + '">' +
             '<div class="date-row">' +
               '<span class="date-line">' + esc(dateLabel(r.date, state.lang)) + '</span>' +
-              '<span class="time-line">' + esc(r.time || '') + '</span>' +
+              '<span class="time-line">' + esc(timeDisplay) + '</span>' +
             '</div>' +
             '<h3>' + (r.emoji ? '<span class="card-emoji">' + esc(r.emoji) + '</span>' : '') + esc(title) + '</h3>' +
-            (location ? '<div class="meta-row"><span class="pill">📍 ' + esc(location) + '</span></div>' : '') +
+            (placePills ? '<div class="meta-row">' + placePills + '</div>' : '') +
             (pills ? '<div class="meta-row">' + pills + '</div>' : '') +
             (desc ? '<p class="desc">' + esc(desc) + '</p>' : '') +
-            (isPast ? '' : '<button type="button" class="cal-btn"' + icsAttrs + '>' + esc(t.addToCalendar) + '</button>') +
+            (isPast ? '' : '<button type="button" class="cal-btn"' + icsAttrs + '>' + icons.date + ' ' + esc(t.addToCalendar) + '</button>') +
           '</div>'
         );
       }).join('');
@@ -442,6 +507,63 @@ const CLIENT_SCRIPT = raw(`<script>
     });
   }
 
+  // Font-size control: a small stepper (persisted, applied via the --fs
+  // custom property so text sizes defined as calc(Npx * var(--fs)) in
+  // PAGE_STYLE scale together). Steps and default index are duplicated
+  // in layout()'s pre-paint script to avoid a flash on load.
+  var FS_STEPS = [0.9, 0.95, 1, 1.08, 1.16, 1.26];
+  var FS_DEFAULT_INDEX = 2;
+  function loadFsIndex() {
+    try {
+      var saved = localStorage.getItem('ep-fontscale-idx');
+      if (saved !== null) {
+        var idx = parseInt(saved, 10);
+        if (idx >= 0 && idx < FS_STEPS.length) return idx;
+      }
+    } catch (e) {}
+    return FS_DEFAULT_INDEX;
+  }
+  function applyFontScale(idx) {
+    document.documentElement.style.setProperty('--fs', String(FS_STEPS[idx]));
+    var downBtn = document.getElementById('fsDown');
+    var upBtn = document.getElementById('fsUp');
+    if (downBtn) downBtn.disabled = idx <= 0;
+    if (upBtn) upBtn.disabled = idx >= FS_STEPS.length - 1;
+  }
+  var fsIndex = loadFsIndex();
+  applyFontScale(fsIndex);
+  var fsDownBtn = document.getElementById('fsDown');
+  if (fsDownBtn) {
+    fsDownBtn.addEventListener('click', function () {
+      fsIndex = Math.max(0, fsIndex - 1);
+      applyFontScale(fsIndex);
+      try { localStorage.setItem('ep-fontscale-idx', String(fsIndex)); } catch (e) {}
+    });
+  }
+  var fsUpBtn = document.getElementById('fsUp');
+  if (fsUpBtn) {
+    fsUpBtn.addEventListener('click', function () {
+      fsIndex = Math.min(FS_STEPS.length - 1, fsIndex + 1);
+      applyFontScale(fsIndex);
+      try { localStorage.setItem('ep-fontscale-idx', String(fsIndex)); } catch (e) {}
+    });
+  }
+
+  // Sticky month headers: each .month-label sticks just below the sticky
+  // top header, so it needs that header's live height (which changes with
+  // font size, language, and narrow-screen wrapping) as a CSS variable.
+  function syncHeaderHeight() {
+    var header = document.querySelector('header.top');
+    if (header) document.documentElement.style.setProperty('--header-h', header.offsetHeight + 'px');
+  }
+  var headerEl = document.querySelector('header.top');
+  if (headerEl && window.ResizeObserver) {
+    new ResizeObserver(syncHeaderHeight).observe(headerEl);
+  } else {
+    window.addEventListener('resize', syncHeaderHeight);
+  }
+  syncHeaderHeight();
+
   render();
 })();
 </script>`)
@@ -461,10 +583,11 @@ function toBase64Utf8(str) {
   return btoa(binary)
 }
 
-function renderPage(sessionsJson) {
+function renderPage(sessionsJson, icons) {
   const dataScript = raw(
     '<script>window.__SESSIONS_B64__ = "' + toBase64Utf8(JSON.stringify(sessionsJson)) + '";' +
-    'window.__I18N_B64__ = "' + toBase64Utf8(JSON.stringify(I18N)) + '";</script>'
+    'window.__I18N_B64__ = "' + toBase64Utf8(JSON.stringify(I18N)) + '";' +
+    'window.__ICONS_B64__ = "' + toBase64Utf8(JSON.stringify(icons || DEFAULT_ICONS)) + '";</script>'
   )
 
   return html`${PAGE_STYLE}
@@ -481,6 +604,10 @@ function renderPage(sessionsJson) {
       <div class="lang-toggle" role="group" aria-label="Language">
         <button type="button" data-lang="en" class="active" aria-pressed="true">EN</button>
         <button type="button" data-lang="zh" aria-pressed="false">中文</button>
+      </div>
+      <div class="fs-toggle" role="group" aria-label="Text size">
+        <button type="button" id="fsDown" aria-label="Decrease text size">A−</button>
+        <button type="button" id="fsUp" aria-label="Increase text size">A+</button>
       </div>
       <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">
         <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -505,14 +632,30 @@ ${CLIENT_SCRIPT}
 `
 }
 
+// Reads the single icon_settings row (via rawSQL, same pattern as
+// admin_settings — public read is technically also allowed via $Table
+// since listRule/viewRule are 'true', but rawSQL keeps the read/write
+// path for this table consistent and lets it work even before a row
+// exists). Falls back to DEFAULT_ICONS for a missing row/blank field —
+// the row is created lazily on the first "Save icons" in /admin.
+async function getIconRow(c) {
+  const db = c.get('$db')
+  const rows = await db.rawSQL({ q: 'SELECT * FROM icon_settings WHERE id = ?', v: ['main'] }).run()
+  const row = (rows && rows[0]) || {}
+  return {
+    icon_date: row.icon_date || DEFAULT_ICONS.date,
+    icon_location: row.icon_location || DEFAULT_ICONS.location,
+    icon_attire: row.icon_attire || DEFAULT_ICONS.attire,
+    icon_meals: row.icon_meals || DEFAULT_ICONS.meals,
+    icon_gather: row.icon_gather || DEFAULT_ICONS.gather,
+    icon_dismissal: row.icon_dismissal || DEFAULT_ICONS.dismissal,
+  }
+}
+
 userApp.get('/', async (c) => {
   const db = c.get('$db')
   const result = await db.table('sessions').select({
-    select: [
-      'date', 'time', 'title_en', 'title_zh', 'location_en', 'location_zh',
-      'description_en', 'description_zh', 'attire_en', 'attire_zh',
-      'vacancy', 'meals_provided', 'emoji',
-    ],
+    select: SESSION_COLUMNS,
     order: 'date',
     sort: 'asc',
     limit: 1000,
@@ -520,11 +663,18 @@ userApp.get('/', async (c) => {
   const items = Array.isArray(result) ? result : result.items || result.results || []
   const rows = items.map((r) => ({
     ...r,
+    session_type: r.session_type === 'outing' ? 'outing' : 'in_house',
     meals_provided: !!r.meals_provided,
     vacancy: r.vacancy === null || r.vacancy === undefined ? null : Number(r.vacancy),
   }))
 
-  return c.html(layout(c, 'MINDS MYG EP Project — Session Calendar', description, renderPage(rows)))
+  const iconRow = await getIconRow(c)
+  const icons = {
+    date: iconRow.icon_date, location: iconRow.icon_location, attire: iconRow.icon_attire,
+    meals: iconRow.icon_meals, gather: iconRow.icon_gather, dismissal: iconRow.icon_dismissal,
+  }
+
+  return c.html(layout(c, 'MINDS MYG EP Project — Session Calendar', description, renderPage(rows, icons)))
 })
 
 // ---------------------------------------------------------------------
@@ -542,12 +692,33 @@ userApp.get('/', async (c) => {
 // how this trusted, password-gated route reaches around that.
 
 const ADMIN_REALM = 'EP Admin'
+// 'session_type' first, followed by the in-house fields (location/time),
+// the outing fields (gather/dismissal), then the fields common to both.
 const SESSION_COLUMNS = [
-  'date', 'time', 'title_en', 'title_zh', 'location_en', 'location_zh',
+  'session_type', 'date', 'time', 'title_en', 'title_zh', 'location_en', 'location_zh',
+  'gather_point_en', 'gather_point_zh', 'gather_time',
+  'dismissal_point_en', 'dismissal_point_zh', 'dismissal_time',
   'description_en', 'description_zh', 'attire_en', 'attire_zh',
   'vacancy', 'meals_provided', 'emoji',
 ]
 const EXPORT_COLUMNS = ['id', ...SESSION_COLUMNS]
+
+// Builds the parameterized INSERT/UPDATE for `sessions` from
+// SESSION_COLUMNS, so every write route (new/edit/import) stays in sync
+// with the column list above automatically.
+function insertSessionSQL() {
+  const cols = ['id', ...SESSION_COLUMNS]
+  return `INSERT INTO sessions (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(',')})`
+}
+function insertSessionValues(id, v) {
+  return [id, ...SESSION_COLUMNS.map((c) => v[c])]
+}
+function updateSessionSQL() {
+  return `UPDATE sessions SET ${SESSION_COLUMNS.map((c) => `${c}=?`).join(', ')}, updated=CURRENT_TIMESTAMP WHERE id=?`
+}
+function updateSessionValues(id, v) {
+  return [...SESSION_COLUMNS.map((c) => v[c]), id]
+}
 
 // Shared coercion for the add/edit session forms (POST body -> DB values).
 // Text fields become NULL when blank so optional columns stay empty
@@ -556,12 +727,19 @@ const EXPORT_COLUMNS = ['id', ...SESSION_COLUMNS]
 function sessionValuesFromForm(body) {
   const str = (k) => (String(body[k] || '').trim() || null)
   return {
+    session_type: body.session_type === 'outing' ? 'outing' : 'in_house',
     date: str('date'),
     time: str('time'),
     title_en: str('title_en'),
     title_zh: str('title_zh'),
     location_en: str('location_en'),
     location_zh: str('location_zh'),
+    gather_point_en: str('gather_point_en'),
+    gather_point_zh: str('gather_point_zh'),
+    gather_time: str('gather_time'),
+    dismissal_point_en: str('dismissal_point_en'),
+    dismissal_point_zh: str('dismissal_point_zh'),
+    dismissal_time: str('dismissal_time'),
     description_en: str('description_en'),
     description_zh: str('description_zh'),
     attire_en: str('attire_en'),
@@ -574,9 +752,16 @@ function sessionValuesFromForm(body) {
 
 function validateSessionValues(v) {
   if (!v.date) return 'Date is required.'
-  if (!v.time) return 'Time is required.'
   if (!v.title_en || !v.title_zh) return 'Title (EN and 中文) is required.'
-  if (!v.location_en || !v.location_zh) return 'Location (EN and 中文) is required.'
+  if (v.session_type === 'outing') {
+    if (!v.gather_point_en || !v.gather_point_zh) return 'Gather point (EN and 中文) is required for outings.'
+    if (!v.gather_time) return 'Gather time is required for outings.'
+    if (!v.dismissal_point_en || !v.dismissal_point_zh) return 'Dismissal point (EN and 中文) is required for outings.'
+    if (!v.dismissal_time) return 'Dismissal time is required for outings.'
+  } else {
+    if (!v.location_en || !v.location_zh) return 'Location (EN and 中文) is required.'
+    if (!v.time) return 'Time is required.'
+  }
   if (v.vacancy !== null && (Number.isNaN(v.vacancy) || v.vacancy < 0)) return 'Vacancy must be a non-negative number.'
   return null
 }
@@ -603,14 +788,19 @@ function unauthorized(c) {
 }
 
 // Returns the $Database (already fetched via c.get('$db')) on success, or
-// null if the request isn't authenticated as admin.
+// null if the request isn't authenticated as admin. Checks both username
+// and password — a blank stored username (not yet set) falls back to
+// 'admin', matching the default the admin portal shows and change-username
+// seeds on first use.
 async function requireAdmin(c) {
   const db = c.get('$db')
   const auth = parseBasicAuth(c.req.header('authorization'))
   if (!auth) return null
-  const rows = await db.rawSQL({ q: "SELECT password_hash, password_salt FROM admin_settings WHERE id = 'main'", v: [] }).run()
+  const rows = await db.rawSQL({ q: "SELECT username, password_hash, password_salt FROM admin_settings WHERE id = 'main'", v: [] }).run()
   const rec = rows && rows[0]
   if (!rec) return null
+  const expectedUser = rec.username || 'admin'
+  if (auth.user !== expectedUser) return null
   const hash = await sha256Hex(rec.password_salt + ':' + auth.pass)
   return hash === rec.password_hash ? db : null
 }
@@ -699,6 +889,11 @@ const ADMIN_STYLE = raw(`<style>
 .checkbox-row{display:flex;align-items:center;gap:8px;margin-top:14px}
 .checkbox-row input{width:16px;height:16px;accent-color:var(--accent)}
 .checkbox-row label{margin:0;font-weight:600;color:var(--ink)}
+.type-radio-row{display:flex;gap:14px;padding-top:6px}
+.type-radio{display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:500;color:var(--ink);cursor:pointer}
+.type-radio input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
+.session-row .meta .tag{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;
+  color:var(--accent-ink);background:var(--accent-soft);border-radius:5px;padding:1px 6px;margin-right:6px;vertical-align:1px}
 </style>`)
 
 function adminHeader(title) {
@@ -710,8 +905,11 @@ ${PAGE_STYLE}
 ${ADMIN_STYLE}`
 }
 
-function adminPage({ notice, ok, sessions } = {}) {
+function adminPage({ notice, ok, sessions, username, icons } = {}) {
   const rows = sessions || []
+  const user = username || 'admin'
+  const ic = icons || {}
+  const iconVal = (k, fallbackKey) => ic[k] || DEFAULT_ICONS[fallbackKey] || ''
   return html`<!doctype html><html lang="en"><head>${adminHeader('Admin')}</head><body>
 <div class="admin-wrap">
   <a class="back-link" href="/">&larr; Back to calendar</a>
@@ -724,21 +922,28 @@ function adminPage({ notice, ok, sessions } = {}) {
     <p class="hint">Add, edit, or delete sessions one at a time. Changes are live immediately.</p>
     ${rows.length === 0
       ? html`<p class="empty-hint">No sessions yet.</p>`
-      : raw(rows.map((s) => (
-          '<div class="session-row">' +
-            '<div class="meta">' +
-              '<div class="d">' + escHtml(s.date) + (s.time ? ' &middot; ' + escHtml(s.time) : '') + '</div>' +
-              '<div class="t">' + (s.emoji ? escHtml(s.emoji) + ' ' : '') + escHtml(s.title_en || s.title_zh || '(untitled)') + '</div>' +
-            '</div>' +
-            '<div class="row-actions">' +
-              '<a href="/admin/sessions/' + encodeURIComponent(s.id) + '/edit">Edit</a>' +
-              '<form method="post" action="/admin/sessions/' + encodeURIComponent(s.id) + '/delete" ' +
-                'onsubmit="return confirm(&quot;Delete this session? This cannot be undone.&quot;)" style="display:inline">' +
-                '<button type="submit" class="danger">Delete</button>' +
-              '</form>' +
-            '</div>' +
-          '</div>'
-        )).join(''))
+      : raw(rows.map((s) => {
+          const isOuting = s.session_type === 'outing'
+          const timeLabel = isOuting
+            ? [s.gather_time, s.dismissal_time].filter(Boolean).join(' – ')
+            : (s.time || '')
+          return (
+            '<div class="session-row">' +
+              '<div class="meta">' +
+                '<div class="d">' + (isOuting ? '<span class="tag">Outing</span>' : '') +
+                  escHtml(s.date) + (timeLabel ? ' &middot; ' + escHtml(timeLabel) : '') + '</div>' +
+                '<div class="t">' + (s.emoji ? escHtml(s.emoji) + ' ' : '') + escHtml(s.title_en || s.title_zh || '(untitled)') + '</div>' +
+              '</div>' +
+              '<div class="row-actions">' +
+                '<a href="/admin/sessions/' + encodeURIComponent(s.id) + '/edit">Edit</a>' +
+                '<form method="post" action="/admin/sessions/' + encodeURIComponent(s.id) + '/delete" ' +
+                  'onsubmit="return confirm(&quot;Delete this session? This cannot be undone.&quot;)" style="display:inline">' +
+                  '<button type="submit" class="danger">Delete</button>' +
+                '</form>' +
+              '</div>' +
+            '</div>'
+          )
+        }).join(''))
     }
     <div class="admin-actions">
       <a class="admin-btn" href="/admin/sessions/new">+ Add session</a>
@@ -767,10 +972,35 @@ function adminPage({ notice, ok, sessions } = {}) {
   </div>
 
   <div class="admin-card">
-    <h2>Change admin password</h2>
-    <p class="hint">This password protects this page. It's separate from PocketUI's own editor/viewer login above —
-      PocketUI's password can't be changed from here.</p>
-    <form method="post" action="/admin/change-password">
+    <h2>Customize icons</h2>
+    <p class="hint">Small icons shown next to certain details on the public calendar. Leave a field blank to use its default.</p>
+    <form method="post" action="/admin/icons">
+      <div class="field-pair">
+        <div><label for="icon_date">Add-to-calendar icon</label><input type="text" id="icon_date" name="icon_date" value="${iconVal('icon_date', 'date')}"/></div>
+        <div><label for="icon_location">Location icon</label><input type="text" id="icon_location" name="icon_location" value="${iconVal('icon_location', 'location')}"/></div>
+      </div>
+      <div class="field-pair">
+        <div><label for="icon_attire">Attire icon</label><input type="text" id="icon_attire" name="icon_attire" value="${iconVal('icon_attire', 'attire')}"/></div>
+        <div><label for="icon_meals">Meals icon</label><input type="text" id="icon_meals" name="icon_meals" value="${iconVal('icon_meals', 'meals')}"/></div>
+      </div>
+      <div class="field-pair">
+        <div><label for="icon_gather">Gather-point icon</label><input type="text" id="icon_gather" name="icon_gather" value="${iconVal('icon_gather', 'gather')}"/></div>
+        <div><label for="icon_dismissal">Dismissal-point icon</label><input type="text" id="icon_dismissal" name="icon_dismissal" value="${iconVal('icon_dismissal', 'dismissal')}"/></div>
+      </div>
+      <div class="admin-actions"><button class="admin-btn" type="submit">Save icons</button></div>
+    </form>
+  </div>
+
+  <div class="admin-card">
+    <h2>Admin login</h2>
+    <p class="hint">Current username: <strong>${user}</strong>. Changing either of these updates what this page
+      (not PocketUI) asks for next time you log in.</p>
+    <form method="post" action="/admin/change-username">
+      <label for="new_username">New username</label>
+      <input type="text" id="new_username" name="new_username" minlength="3" maxlength="40" placeholder="${user}" required/>
+      <div class="admin-actions"><button class="admin-btn" type="submit">Update username</button></div>
+    </form>
+    <form method="post" action="/admin/change-password" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
       <label for="new_password">New password</label>
       <input type="password" id="new_password" name="new_password" minlength="6" required/>
       <label for="confirm_password">Confirm new password</label>
@@ -797,6 +1027,7 @@ function escHtml(s) {
 function sessionFormPage({ session, action, title, notice, ok } = {}) {
   const s = session || {}
   const val = (k) => escHtml(s[k])
+  const type = s.session_type === 'outing' ? 'outing' : 'in_house'
   return html`<!doctype html><html lang="en"><head>${adminHeader(title)}</head><body>
 <div class="admin-wrap narrow">
   <a class="back-link" href="/admin">&larr; Back to admin</a>
@@ -806,7 +1037,13 @@ function sessionFormPage({ session, action, title, notice, ok } = {}) {
     <form method="post" action="${action}">
       <div class="field-pair">
         <div><label for="date">Date</label><input type="date" id="date" name="date" value="${val('date')}" required/></div>
-        <div><label for="time">Time</label><input type="text" id="time" name="time" value="${val('time')}" placeholder="9:30 AM - 11:30 AM" required/></div>
+        <div>
+          <label>Session type</label>
+          <div class="type-radio-row">
+            <label class="type-radio"><input type="radio" name="session_type" value="in_house" ${type === 'in_house' ? 'checked' : ''}/> In-house</label>
+            <label class="type-radio"><input type="radio" name="session_type" value="outing" ${type === 'outing' ? 'checked' : ''}/> Outing</label>
+          </div>
+        </div>
       </div>
 
       <div class="field-pair">
@@ -814,9 +1051,34 @@ function sessionFormPage({ session, action, title, notice, ok } = {}) {
         <div><label for="title_zh">Title (中文)</label><input type="text" id="title_zh" name="title_zh" value="${val('title_zh')}" required/></div>
       </div>
 
-      <div class="field-pair">
-        <div><label for="location_en">Location (EN)</label><input type="text" id="location_en" name="location_en" value="${val('location_en')}" required/></div>
-        <div><label for="location_zh">Location (中文)</label><input type="text" id="location_zh" name="location_zh" value="${val('location_zh')}" required/></div>
+      <div data-type-group="in_house">
+        <div class="field-pair">
+          <div><label for="location_en">Location (EN)</label><input type="text" id="location_en" name="location_en" value="${val('location_en')}" placeholder="Towner Gardens School"/></div>
+          <div><label for="location_zh">Location (中文)</label><input type="text" id="location_zh" name="location_zh" value="${val('location_zh')}"/></div>
+        </div>
+        <div class="field-pair">
+          <div><label for="time">Start &ndash; end time</label><input type="text" id="time" name="time" value="${val('time')}" placeholder="9:30 AM - 11:30 AM"/></div>
+          <div></div>
+        </div>
+      </div>
+
+      <div data-type-group="outing">
+        <div class="field-pair">
+          <div><label for="gather_point_en">Gather point (EN)</label><input type="text" id="gather_point_en" name="gather_point_en" value="${val('gather_point_en')}"/></div>
+          <div><label for="gather_point_zh">Gather point (中文)</label><input type="text" id="gather_point_zh" name="gather_point_zh" value="${val('gather_point_zh')}"/></div>
+        </div>
+        <div class="field-pair">
+          <div><label for="gather_time">Gather time</label><input type="text" id="gather_time" name="gather_time" value="${val('gather_time')}" placeholder="9:00 AM"/></div>
+          <div></div>
+        </div>
+        <div class="field-pair">
+          <div><label for="dismissal_point_en">Dismissal point (EN)</label><input type="text" id="dismissal_point_en" name="dismissal_point_en" value="${val('dismissal_point_en')}"/></div>
+          <div><label for="dismissal_point_zh">Dismissal point (中文)</label><input type="text" id="dismissal_point_zh" name="dismissal_point_zh" value="${val('dismissal_point_zh')}"/></div>
+        </div>
+        <div class="field-pair">
+          <div><label for="dismissal_time">Dismissal time</label><input type="text" id="dismissal_time" name="dismissal_time" value="${val('dismissal_time')}" placeholder="4:00 PM"/></div>
+          <div></div>
+        </div>
       </div>
 
       <div class="field-pair">
@@ -846,6 +1108,20 @@ function sessionFormPage({ session, action, title, notice, ok } = {}) {
     </form>
   </div>
 </div>
+<script>
+(function () {
+  var radios = document.querySelectorAll('input[name="session_type"]');
+  function sync() {
+    var checked = document.querySelector('input[name="session_type"]:checked');
+    var val = checked ? checked.value : 'in_house';
+    document.querySelectorAll('[data-type-group]').forEach(function (el) {
+      el.style.display = el.getAttribute('data-type-group') === val ? '' : 'none';
+    });
+  }
+  radios.forEach(function (r) { r.addEventListener('change', sync); });
+  sync();
+})();
+</script>
 </body></html>`
 }
 
@@ -854,11 +1130,33 @@ async function listSessionsForAdmin(db) {
   return Array.isArray(result) ? result : result.items || result.results || []
 }
 
+// Bundles everything adminPage() needs to render (sessions list, current
+// username, current icons) so every route that redisplays the admin page
+// after a POST doesn't have to fetch each piece by hand.
+async function loadAdminPageData(db) {
+  const [sessions, settingsRows, iconRows] = await Promise.all([
+    listSessionsForAdmin(db),
+    db.rawSQL({ q: "SELECT username FROM admin_settings WHERE id = 'main'", v: [] }).run(),
+    db.rawSQL({ q: 'SELECT * FROM icon_settings WHERE id = ?', v: ['main'] }).run(),
+  ])
+  const username = (settingsRows && settingsRows[0] && settingsRows[0].username) || 'admin'
+  const iconRow = (iconRows && iconRows[0]) || {}
+  const icons = {
+    icon_date: iconRow.icon_date || DEFAULT_ICONS.date,
+    icon_location: iconRow.icon_location || DEFAULT_ICONS.location,
+    icon_attire: iconRow.icon_attire || DEFAULT_ICONS.attire,
+    icon_meals: iconRow.icon_meals || DEFAULT_ICONS.meals,
+    icon_gather: iconRow.icon_gather || DEFAULT_ICONS.gather,
+    icon_dismissal: iconRow.icon_dismissal || DEFAULT_ICONS.dismissal,
+  }
+  return { sessions, username, icons }
+}
+
 userApp.get('/admin', async (c) => {
   const db = await requireAdmin(c)
   if (!db) return unauthorized(c)
-  const sessions = await listSessionsForAdmin(db)
-  return c.html(adminPage({ sessions }))
+  const data = await loadAdminPageData(db)
+  return c.html(adminPage(data))
 })
 
 userApp.get('/admin/sessions/new', async (c) => {
@@ -876,17 +1174,10 @@ userApp.post('/admin/sessions/new', async (c) => {
   if (err) return c.html(sessionFormPage({ session: body, action: '/admin/sessions/new', title: 'Add session', notice: err, ok: false }), 400)
 
   const newId = crypto.randomUUID()
-  await db.rawSQL({
-    q: `INSERT INTO sessions (id, date, time, title_en, title_zh, location_en, location_zh, description_en,
-        description_zh, attire_en, attire_zh, vacancy, meals_provided, emoji)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    v: [newId, values.date, values.time, values.title_en, values.title_zh, values.location_en, values.location_zh,
-        values.description_en, values.description_zh, values.attire_en, values.attire_zh, values.vacancy,
-        values.meals_provided, values.emoji],
-  }).run()
+  await db.rawSQL({ q: insertSessionSQL(), v: insertSessionValues(newId, values) }).run()
 
-  const sessions = await listSessionsForAdmin(db)
-  return c.html(adminPage({ sessions, notice: 'Session added.', ok: true }))
+  const data = await loadAdminPageData(db)
+  return c.html(adminPage({ ...data, notice: 'Session added.', ok: true }))
 })
 
 userApp.get('/admin/sessions/:id/edit', async (c) => {
@@ -895,7 +1186,10 @@ userApp.get('/admin/sessions/:id/edit', async (c) => {
   const id = c.req.param('id')
   const rows = await db.rawSQL({ q: 'SELECT * FROM sessions WHERE id = ?', v: [id] }).run()
   const session = rows && rows[0]
-  if (!session) return c.html(adminPage({ notice: 'Session not found — it may have been deleted.', ok: false }), 404)
+  if (!session) {
+    const data = await loadAdminPageData(db)
+    return c.html(adminPage({ ...data, notice: 'Session not found — it may have been deleted.', ok: false }), 404)
+  }
   return c.html(sessionFormPage({ session, action: '/admin/sessions/' + encodeURIComponent(id) + '/edit', title: 'Edit session' }))
 })
 
@@ -913,17 +1207,10 @@ userApp.post('/admin/sessions/:id/edit', async (c) => {
     }), 400)
   }
 
-  await db.rawSQL({
-    q: `UPDATE sessions SET date=?, time=?, title_en=?, title_zh=?, location_en=?, location_zh=?,
-        description_en=?, description_zh=?, attire_en=?, attire_zh=?, vacancy=?, meals_provided=?, emoji=?,
-        updated=CURRENT_TIMESTAMP WHERE id=?`,
-    v: [values.date, values.time, values.title_en, values.title_zh, values.location_en, values.location_zh,
-        values.description_en, values.description_zh, values.attire_en, values.attire_zh, values.vacancy,
-        values.meals_provided, values.emoji, id],
-  }).run()
+  await db.rawSQL({ q: updateSessionSQL(), v: updateSessionValues(id, values) }).run()
 
-  const sessions = await listSessionsForAdmin(db)
-  return c.html(adminPage({ sessions, notice: 'Session updated.', ok: true }))
+  const data = await loadAdminPageData(db)
+  return c.html(adminPage({ ...data, notice: 'Session updated.', ok: true }))
 })
 
 userApp.post('/admin/sessions/:id/delete', async (c) => {
@@ -931,8 +1218,8 @@ userApp.post('/admin/sessions/:id/delete', async (c) => {
   if (!db) return unauthorized(c)
   const id = c.req.param('id')
   await db.rawSQL({ q: 'DELETE FROM sessions WHERE id = ?', v: [id] }).run()
-  const sessions = await listSessionsForAdmin(db)
-  return c.html(adminPage({ sessions, notice: 'Session deleted.', ok: true }))
+  const data = await loadAdminPageData(db)
+  return c.html(adminPage({ ...data, notice: 'Session deleted.', ok: true }))
 })
 
 userApp.get('/admin/export.csv', async (c) => {
@@ -965,9 +1252,13 @@ userApp.post('/admin/import', async (c) => {
     const file = body['file']
     if (file && typeof file !== 'string' && typeof file.text === 'function') text = await file.text()
   } catch (e) {
-    return c.html(adminPage({ notice: 'Could not read the uploaded file.', ok: false }), 400)
+    const data = await loadAdminPageData(db)
+    return c.html(adminPage({ ...data, notice: 'Could not read the uploaded file.', ok: false }), 400)
   }
-  if (!text.trim()) return c.html(adminPage({ notice: 'No CSV content received.', ok: false }), 400)
+  if (!text.trim()) {
+    const data = await loadAdminPageData(db)
+    return c.html(adminPage({ ...data, notice: 'No CSV content received.', ok: false }), 400)
+  }
 
   const rows = parseCsv(text)
   let inserted = 0
@@ -978,12 +1269,19 @@ userApp.post('/admin/import', async (c) => {
     const raw = rows[i]
     try {
       const values = {
+        session_type: raw.session_type === 'outing' ? 'outing' : 'in_house',
         date: raw.date || null,
         time: raw.time || null,
         title_en: raw.title_en || null,
         title_zh: raw.title_zh || null,
         location_en: raw.location_en || null,
         location_zh: raw.location_zh || null,
+        gather_point_en: raw.gather_point_en || null,
+        gather_point_zh: raw.gather_point_zh || null,
+        gather_time: raw.gather_time || null,
+        dismissal_point_en: raw.dismissal_point_en || null,
+        dismissal_point_zh: raw.dismissal_point_zh || null,
+        dismissal_time: raw.dismissal_time || null,
         description_en: raw.description_en || null,
         description_zh: raw.description_zh || null,
         attire_en: raw.attire_en || null,
@@ -997,28 +1295,14 @@ userApp.post('/admin/import', async (c) => {
       if (id) {
         const existing = await db.rawSQL({ q: 'SELECT id FROM sessions WHERE id = ?', v: [id] }).run()
         if (existing && existing.length) {
-          await db.rawSQL({
-            q: `UPDATE sessions SET date=?, time=?, title_en=?, title_zh=?, location_en=?, location_zh=?,
-                description_en=?, description_zh=?, attire_en=?, attire_zh=?, vacancy=?, meals_provided=?, emoji=?,
-                updated=CURRENT_TIMESTAMP WHERE id=?`,
-            v: [values.date, values.time, values.title_en, values.title_zh, values.location_en, values.location_zh,
-                values.description_en, values.description_zh, values.attire_en, values.attire_zh, values.vacancy,
-                values.meals_provided, values.emoji, id],
-          }).run()
+          await db.rawSQL({ q: updateSessionSQL(), v: updateSessionValues(id, values) }).run()
           updated++
           didUpdate = true
         }
       }
       if (!didUpdate) {
         const newId = crypto.randomUUID()
-        await db.rawSQL({
-          q: `INSERT INTO sessions (id, date, time, title_en, title_zh, location_en, location_zh, description_en,
-              description_zh, attire_en, attire_zh, vacancy, meals_provided, emoji)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          v: [newId, values.date, values.time, values.title_en, values.title_zh, values.location_en, values.location_zh,
-              values.description_en, values.description_zh, values.attire_en, values.attire_zh, values.vacancy,
-              values.meals_provided, values.emoji],
-        }).run()
+        await db.rawSQL({ q: insertSessionSQL(), v: insertSessionValues(newId, values) }).run()
         inserted++
       }
     } catch (e) {
@@ -1028,7 +1312,8 @@ userApp.post('/admin/import', async (c) => {
 
   const summary = `Import complete — ${inserted} added, ${updated} updated` +
     (errors.length ? `, ${errors.length} row(s) failed: ${errors.slice(0, 5).join('; ')}` : '.')
-  return c.html(adminPage({ notice: summary, ok: errors.length === 0 }))
+  const data = await loadAdminPageData(db)
+  return c.html(adminPage({ ...data, notice: summary, ok: errors.length === 0 }))
 })
 
 userApp.post('/admin/change-password', async (c) => {
@@ -1038,8 +1323,9 @@ userApp.post('/admin/change-password', async (c) => {
   const body = await c.req.parseBody()
   const next = String(body['new_password'] || '')
   const confirm = String(body['confirm_password'] || '')
-  if (next.length < 6) return c.html(adminPage({ notice: 'Password must be at least 6 characters.', ok: false }), 400)
-  if (next !== confirm) return c.html(adminPage({ notice: 'Passwords did not match.', ok: false }), 400)
+  const dataFor = async (notice, ok) => ({ ...(await loadAdminPageData(db)), notice, ok })
+  if (next.length < 6) return c.html(adminPage(await dataFor('Password must be at least 6 characters.', false)), 400)
+  if (next !== confirm) return c.html(adminPage(await dataFor('Passwords did not match.', false)), 400)
 
   const saltBytes = crypto.getRandomValues(new Uint8Array(16))
   const salt = Array.from(saltBytes).map((b) => b.toString(16).padStart(2, '0')).join('')
@@ -1049,7 +1335,58 @@ userApp.post('/admin/change-password', async (c) => {
     v: [hash, salt],
   }).run()
 
-  return c.html(adminPage({ notice: 'Password updated. Use it next time you log in to this page.', ok: true }))
+  return c.html(adminPage(await dataFor('Password updated. Use it next time you log in to this page.', true)))
+})
+
+userApp.post('/admin/change-username', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+
+  const body = await c.req.parseBody()
+  const next = String(body['new_username'] || '').trim()
+  const dataFor = async (notice, ok) => ({ ...(await loadAdminPageData(db)), notice, ok })
+  if (!/^[A-Za-z0-9_.@-]{3,40}$/.test(next)) {
+    return c.html(adminPage(await dataFor('Username must be 3–40 characters: letters, numbers, . _ @ -', false)), 400)
+  }
+
+  await db.rawSQL({
+    q: "UPDATE admin_settings SET username = ?, updated = CURRENT_TIMESTAMP WHERE id = 'main'",
+    v: [next],
+  }).run()
+
+  return c.html(adminPage(await dataFor('Username updated. Use it next time you log in to this page.', true)))
+})
+
+// Upserts the single icon_settings row — this is what actually creates
+// it the first time (no migration data-seed is needed): a blank field is
+// stored as the current default rather than an empty string, so a future
+// change to DEFAULT_ICONS wouldn't silently affect an admin who already
+// saved this form once and left a field blank.
+userApp.post('/admin/icons', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+
+  const body = await c.req.parseBody()
+  const pick = (k, fallback) => String(body[k] || '').trim() || fallback
+  const values = {
+    icon_date: pick('icon_date', DEFAULT_ICONS.date),
+    icon_location: pick('icon_location', DEFAULT_ICONS.location),
+    icon_attire: pick('icon_attire', DEFAULT_ICONS.attire),
+    icon_meals: pick('icon_meals', DEFAULT_ICONS.meals),
+    icon_gather: pick('icon_gather', DEFAULT_ICONS.gather),
+    icon_dismissal: pick('icon_dismissal', DEFAULT_ICONS.dismissal),
+  }
+  await db.rawSQL({
+    q: `INSERT INTO icon_settings (id, icon_date, icon_location, icon_attire, icon_meals, icon_gather, icon_dismissal)
+        VALUES ('main', ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET icon_date=excluded.icon_date, icon_location=excluded.icon_location,
+          icon_attire=excluded.icon_attire, icon_meals=excluded.icon_meals, icon_gather=excluded.icon_gather,
+          icon_dismissal=excluded.icon_dismissal, updated=CURRENT_TIMESTAMP`,
+    v: [values.icon_date, values.icon_location, values.icon_attire, values.icon_meals, values.icon_gather, values.icon_dismissal],
+  }).run()
+
+  const data = await loadAdminPageData(db)
+  return c.html(adminPage({ ...data, notice: 'Icons updated.', ok: true }))
 })
 
 userApp.get('/robots.txt', (c) => {
