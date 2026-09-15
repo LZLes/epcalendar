@@ -8,9 +8,10 @@ Built on [teenyapp.com](https://teenyapp.com), project slug `myg-ep-sessions`.
 
 - **Live site:** https://myg-ep-sessions.app.teenyapp.com
 - **Admin portal:** `/admin` — add/edit/delete sessions (in-house or
-  outing), bulk export/import (CSV + JSON), customizable calendar icons,
-  and its own changeable username + password. The main way to manage
-  sessions day to day. See `CLAUDE.md` for details.
+  outing, draft or published), bulk export/import (CSV + JSON), one-way
+  sync from a published Google Sheet, customizable calendar icons, and
+  its own changeable username + password. The main way to manage sessions
+  day to day. See `CLAUDE.md` for details.
 - **PocketUI (optional):** `/api/v1/pocket/` — the built-in raw table
   editor, still there as a fallback. Credentials aren't stored in this
   repo — see the project dashboard, or the chat this was set up in.
@@ -46,7 +47,11 @@ needed).
 - **In bulk:** also from `/admin` — export everything to CSV, edit in a
   spreadsheet, re-import (rows with a blank `id` are added, rows whose
   `id` matches an existing session update it — nothing is ever deleted by
-  import).
+  import). See `docs/sample-import-template.csv` for the column headers.
+- **From a Google Sheet:** publish a sheet to the web as CSV, paste that
+  link into the "Sync from Google Sheet" card in `/admin`, then hit
+  "Sync now" any time to pull in the sheet's current contents (same
+  add/update rules as a CSV import — one-way, Sheet → calendar).
 - **PocketUI** (`/api/v1/pocket/`) still works too, if you prefer its raw
   table view for something the portal doesn't cover.
 

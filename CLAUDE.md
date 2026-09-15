@@ -176,6 +176,19 @@ the DB is treated as `'admin'` (see `requireAdmin()`). From the page:
 - **Import** — `/admin/import`, multipart CSV upload. A row with a blank
   `id` is inserted as new; a row whose `id` matches an existing session
   updates it in place. **Nothing is ever deleted by import.**
+- **Sync from Google Sheet** — `POST /admin/sheet-sync-url` saves a
+  published-CSV URL (`admin_settings.sheet_sync_url`; must start with
+  `https://`) and `POST /admin/sync-sheet` fetches it and runs it through
+  `importCsvRows()` — the exact same row-mapping/insert-or-update logic as
+  a manual CSV upload (both routes now call this one shared function), so
+  behavior can't drift between them. One-way only (Sheet → calendar);
+  nothing on the Sheet side is ever changed, and nothing is ever deleted
+  from the calendar by a sync. Meant for a Google Sheet published via
+  **File → Share → Publish to web → Comma-separated values (.csv)** —
+  that URL re-serves the current sheet content on every fetch, so
+  "Sync now" pulls whatever is in the Sheet *right now*, not a snapshot
+  from when the URL was saved. See `docs/sample-import-template.csv` for
+  the expected column headers (same as the CSV export).
 - **Customize icons** — `POST /admin/icons`, upserts the single
   `icon_settings` row (`id = 'main'`) with the emoji shown next to the
   add-to-calendar button, location, attire, meals, gather point, and
