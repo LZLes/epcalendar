@@ -869,6 +869,8 @@ const ADMIN_STYLE = raw(`<style>
 .admin-card{background:var(--card);border:1px solid var(--card-border);border-radius:14px;padding:18px 20px;margin-bottom:18px;box-shadow:var(--shadow-sm)}
 .admin-card h2{font-size:14.5px;margin:0 0 10px}
 .admin-card p.hint{font-size:12.5px;color:var(--ink-soft);margin:6px 0 14px}
+.admin-card ol.hint-steps{font-size:12.5px;color:var(--ink-soft);margin:0 0 14px;padding-left:20px}
+.admin-card ol.hint-steps li{margin-bottom:5px}
 .admin-card label{display:block;font-size:12.5px;font-weight:600;margin:10px 0 4px;color:var(--ink-soft)}
 .admin-card input[type=password],.admin-card input[type=file],.admin-card input[type=text],
 .admin-card input[type=date],.admin-card input[type=number],.admin-card textarea{
@@ -934,7 +936,11 @@ function adminPage({ notice, ok, sessions, username, sheetSyncUrl, icons } = {})
 
   <div class="admin-card">
     <h2>Sessions</h2>
-    <p class="hint">Add, edit, or delete sessions one at a time. Changes are live immediately.</p>
+    <p class="hint">Every session, soonest first. <strong>Edit</strong> to change one, <strong>Delete</strong> to
+      remove it (this cannot be undone — there's no undo or trash). A session tagged <strong>Draft</strong> is only
+      visible on this page — it won't appear on the public calendar until you open it and press
+      <strong>Publish</strong> instead of <strong>Save as draft</strong>. Every change here is live immediately,
+      no extra step needed.</p>
     ${rows.length === 0
       ? html`<p class="empty-hint">No sessions yet.</p>`
       : raw(rows.map((s) => {
@@ -970,7 +976,10 @@ function adminPage({ notice, ok, sessions, username, sheetSyncUrl, icons } = {})
 
   <div class="admin-card">
     <h2>Export sessions</h2>
-    <p class="hint">Download every session as a spreadsheet-friendly CSV or as JSON — handy for backups or bulk edits.</p>
+    <p class="hint">Download every session as a file. <strong>CSV</strong> opens in Excel, Numbers, or Google
+      Sheets — edit it there, then use <strong>Import CSV</strong> below to bring your changes back in.
+      <strong>JSON</strong> is a technical backup format, mainly useful for a raw copy of everything. Worth doing
+      either one occasionally, since there's no automatic backup.</p>
     <div class="admin-actions">
       <a class="admin-btn" href="/admin/export.csv">Download CSV</a>
       <a class="admin-btn secondary" href="/admin/export.json">Download JSON</a>
@@ -979,9 +988,11 @@ function adminPage({ notice, ok, sessions, username, sheetSyncUrl, icons } = {})
 
   <div class="admin-card">
     <h2>Import sessions</h2>
-    <p class="hint">Upload a CSV with the same columns as the export. Rows with a blank <code>id</code> are added as
-      new sessions; rows whose <code>id</code> matches an existing session update it in place. Nothing is ever
-      deleted by import.</p>
+    <p class="hint">Upload a CSV file with the same column headings as <strong>Download CSV</strong> above (download
+      one first, even an empty one, to see the exact headings to use). Leave the <code>id</code> column blank on
+      rows you want added as brand-new sessions; put an existing session's <code>id</code> in that column instead to
+      update it. <strong>Nothing already on the calendar is ever deleted by an import</strong> — worst case, a row
+      you matched by <code>id</code> gets overwritten with what's in the file.</p>
     <form method="post" action="/admin/import" enctype="multipart/form-data">
       <input type="file" name="file" accept=".csv,text/csv" required/>
       <div class="admin-actions"><button class="admin-btn" type="submit">Import CSV</button></div>
@@ -990,12 +1001,17 @@ function adminPage({ notice, ok, sessions, username, sheetSyncUrl, icons } = {})
 
   <div class="admin-card">
     <h2>Sync from Google Sheet</h2>
-    <p class="hint">One-way sync (Sheet &rarr; calendar), same rules as CSV import above: a blank <code>id</code>
-      column adds a new session, a matching <code>id</code> updates it, nothing is ever deleted. In Google Sheets:
-      <strong>File &rarr; Share &rarr; Publish to web</strong>, choose the sheet and <strong>Comma-separated
-      values (.csv)</strong>, then paste the link it gives you below. Use the same column headers as
-      <a class="admin-link" href="/admin/export.csv">the CSV export</a> (an <code>id</code> column is optional —
-      leave it out, or blank, to always add new rows).</p>
+    <p class="hint">Keep sessions in a Google Sheet instead of typing them here one at a time:</p>
+    <ol class="hint-steps">
+      <li>In Google Sheets: <strong>File &rarr; Share &rarr; Publish to web</strong>, choose the sheet and
+        <strong>Comma-separated values (.csv)</strong>, then click Publish and copy the link it gives you.</li>
+      <li>Paste that link below and press <strong>Save URL</strong> — only needs doing once.</li>
+      <li>Whenever the Sheet changes, come back here and press <strong>Sync now</strong> to pull in the latest
+        rows.</li>
+    </ol>
+    <p class="hint">Same rules as a CSV upload above (blank <code>id</code> = new row, matching <code>id</code> =
+      update) — nothing on the calendar is ever deleted, and nothing in the Sheet itself is ever changed by this.
+      Use the same column headings as <a class="admin-link" href="/admin/export.csv">the CSV export</a>.</p>
     <form method="post" action="/admin/sheet-sync-url">
       <label for="sheet_sync_url">Published CSV URL</label>
       <input type="text" id="sheet_sync_url" name="sheet_sync_url" value="${escHtml(sheetUrl)}"
@@ -1011,7 +1027,9 @@ function adminPage({ notice, ok, sessions, username, sheetSyncUrl, icons } = {})
 
   <div class="admin-card">
     <h2>Customize icons</h2>
-    <p class="hint">Small icons shown next to certain details on the public calendar. Leave a field blank to use its default.</p>
+    <p class="hint">The small emoji shown next to certain details on the public calendar — each box already shows
+      what's currently used (the default, unless you've changed it before). Type any emoji into a box to replace
+      it, or clear a box and save to go back to the default.</p>
     <form method="post" action="/admin/icons">
       <div class="field-pair">
         <div><label for="icon_date">Add-to-calendar icon</label><input type="text" id="icon_date" name="icon_date" value="${iconVal('icon_date', 'date')}"/></div>
@@ -1031,8 +1049,10 @@ function adminPage({ notice, ok, sessions, username, sheetSyncUrl, icons } = {})
 
   <div class="admin-card">
     <h2>Admin login</h2>
-    <p class="hint">Current username: <strong>${user}</strong>. Changing either of these updates what this page
-      (not PocketUI) asks for next time you log in.</p>
+    <p class="hint">Current username: <strong>${user}</strong>. This is the username and password for
+      <strong>this page only</strong> — separate from PocketUI's login. Changing either one signs you out right
+      away; log back in with the new details next time you visit this page. Pick something only you (and whoever
+      else manages sessions) would know.</p>
     <form method="post" action="/admin/change-username">
       <label for="new_username">New username</label>
       <input type="text" id="new_username" name="new_username" minlength="3" maxlength="40" placeholder="${user}" required/>
