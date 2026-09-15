@@ -919,9 +919,10 @@ ${PAGE_STYLE}
 ${ADMIN_STYLE}`
 }
 
-function adminPage({ notice, ok, sessions, username, icons } = {}) {
+function adminPage({ notice, ok, sessions, username, sheetSyncUrl, icons } = {}) {
   const rows = sessions || []
   const user = username || 'admin'
+  const sheetUrl = sheetSyncUrl || ''
   const ic = icons || {}
   const iconVal = (k, fallbackKey) => ic[k] || DEFAULT_ICONS[fallbackKey] || ''
   return html`<!doctype html><html lang="en"><head>${adminHeader('Admin')}</head><body>
@@ -985,6 +986,27 @@ function adminPage({ notice, ok, sessions, username, icons } = {}) {
       <input type="file" name="file" accept=".csv,text/csv" required/>
       <div class="admin-actions"><button class="admin-btn" type="submit">Import CSV</button></div>
     </form>
+  </div>
+
+  <div class="admin-card">
+    <h2>Sync from Google Sheet</h2>
+    <p class="hint">One-way sync (Sheet &rarr; calendar), same rules as CSV import above: a blank <code>id</code>
+      column adds a new session, a matching <code>id</code> updates it, nothing is ever deleted. In Google Sheets:
+      <strong>File &rarr; Share &rarr; Publish to web</strong>, choose the sheet and <strong>Comma-separated
+      values (.csv)</strong>, then paste the link it gives you below. Use the same column headers as
+      <a class="admin-link" href="/admin/export.csv">the CSV export</a> (an <code>id</code> column is optional —
+      leave it out, or blank, to always add new rows).</p>
+    <form method="post" action="/admin/sheet-sync-url">
+      <label for="sheet_sync_url">Published CSV URL</label>
+      <input type="text" id="sheet_sync_url" name="sheet_sync_url" value="${escHtml(sheetUrl)}"
+        placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv"/>
+      <div class="admin-actions"><button class="admin-btn secondary" type="submit">Save URL</button></div>
+    </form>
+    ${sheetUrl
+      ? html`<form method="post" action="/admin/sync-sheet" style="margin-top:10px">
+          <div class="admin-actions"><button class="admin-btn" type="submit">Sync now</button></div>
+        </form>`
+      : ''}
   </div>
 
   <div class="admin-card">
@@ -1156,10 +1178,12 @@ async function listSessionsForAdmin(db) {
 async function loadAdminPageData(db) {
   const [sessions, settingsRows, iconRows] = await Promise.all([
     listSessionsForAdmin(db),
-    db.rawSQL({ q: "SELECT username FROM admin_settings WHERE id = 'main'", v: [] }).run(),
+    db.rawSQL({ q: "SELECT username, sheet_sync_url FROM admin_settings WHERE id = 'main'", v: [] }).run(),
     db.rawSQL({ q: 'SELECT * FROM icon_settings WHERE id = ?', v: ['main'] }).run(),
   ])
-  const username = (settingsRows && settingsRows[0] && settingsRows[0].username) || 'admin'
+  const settings = (settingsRows && settingsRows[0]) || {}
+  const username = settings.username || 'admin'
+  const sheetSyncUrl = settings.sheet_sync_url || ''
   const iconRow = (iconRows && iconRows[0]) || {}
   const icons = {
     icon_date: iconRow.icon_date || DEFAULT_ICONS.date,
@@ -1169,7 +1193,7 @@ async function loadAdminPageData(db) {
     icon_gather: iconRow.icon_gather || DEFAULT_ICONS.gather,
     icon_dismissal: iconRow.icon_dismissal || DEFAULT_ICONS.dismissal,
   }
-  return { sessions, username, icons }
+  return { sessions, username, sheetSyncUrl, icons }
 }
 
 userApp.get('/admin', async (c) => {
@@ -1262,24 +1286,11 @@ userApp.get('/admin/export.json', async (c) => {
   })
 })
 
-userApp.post('/admin/import', async (c) => {
-  const db = await requireAdmin(c)
-  if (!db) return unauthorized(c)
-
-  let text = ''
-  try {
-    const body = await c.req.parseBody()
-    const file = body['file']
-    if (file && typeof file !== 'string' && typeof file.text === 'function') text = await file.text()
-  } catch (e) {
-    const data = await loadAdminPageData(db)
-    return c.html(adminPage({ ...data, notice: 'Could not read the uploaded file.', ok: false }), 400)
-  }
-  if (!text.trim()) {
-    const data = await loadAdminPageData(db)
-    return c.html(adminPage({ ...data, notice: 'No CSV content received.', ok: false }), 400)
-  }
-
+// Shared by the file-upload import (POST /admin/import) and the Google
+// Sheet sync (POST /admin/sync-sheet) — same row shape, same
+// insert-if-blank-id / update-if-matching-id rule, same "nothing is ever
+// deleted" guarantee, so both routes stay in sync automatically.
+async function importCsvRows(db, text) {
   const rows = parseCsv(text)
   let inserted = 0
   let updated = 0
@@ -1331,10 +1342,35 @@ userApp.post('/admin/import', async (c) => {
     }
   }
 
-  const summary = `Import complete — ${inserted} added, ${updated} updated` +
+  return { inserted, updated, errors }
+}
+
+function importSummary({ inserted, updated, errors }) {
+  return `Import complete — ${inserted} added, ${updated} updated` +
     (errors.length ? `, ${errors.length} row(s) failed: ${errors.slice(0, 5).join('; ')}` : '.')
+}
+
+userApp.post('/admin/import', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+
+  let text = ''
+  try {
+    const body = await c.req.parseBody()
+    const file = body['file']
+    if (file && typeof file !== 'string' && typeof file.text === 'function') text = await file.text()
+  } catch (e) {
+    const data = await loadAdminPageData(db)
+    return c.html(adminPage({ ...data, notice: 'Could not read the uploaded file.', ok: false }), 400)
+  }
+  if (!text.trim()) {
+    const data = await loadAdminPageData(db)
+    return c.html(adminPage({ ...data, notice: 'No CSV content received.', ok: false }), 400)
+  }
+
+  const result = await importCsvRows(db, text)
   const data = await loadAdminPageData(db)
-  return c.html(adminPage({ ...data, notice: summary, ok: errors.length === 0 }))
+  return c.html(adminPage({ ...data, notice: importSummary(result), ok: result.errors.length === 0 }))
 })
 
 userApp.post('/admin/change-password', async (c) => {
@@ -1408,6 +1444,61 @@ userApp.post('/admin/icons', async (c) => {
 
   const data = await loadAdminPageData(db)
   return c.html(adminPage({ ...data, notice: 'Icons updated.', ok: true }))
+})
+
+// Saves the published-CSV URL used by "Sync now" below. Kept as its own
+// route (rather than folded into /admin/sync-sheet) so the URL can be
+// saved once and re-synced later without retyping it.
+userApp.post('/admin/sheet-sync-url', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+
+  const body = await c.req.parseBody()
+  const url = String(body['sheet_sync_url'] || '').trim()
+  const dataFor = async (notice, ok) => ({ ...(await loadAdminPageData(db)), notice, ok })
+  if (url && !/^https:\/\//i.test(url)) {
+    return c.html(adminPage(await dataFor('Sheet URL must start with https://', false)), 400)
+  }
+
+  await db.rawSQL({
+    q: "UPDATE admin_settings SET sheet_sync_url = ?, updated = CURRENT_TIMESTAMP WHERE id = 'main'",
+    v: [url || null],
+  }).run()
+
+  return c.html(adminPage(await dataFor(url ? 'Google Sheet URL saved.' : 'Google Sheet URL cleared.', true)))
+})
+
+// Fetches the saved published-CSV URL (Google Sheets: File > Share >
+// Publish to web, CSV format) and runs it through the same import logic
+// as a manual CSV upload — same insert-if-blank-id / update-if-matching-id
+// rule, nothing ever deleted. One-way (Sheet -> calendar) only.
+userApp.post('/admin/sync-sheet', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+
+  const settingsRows = await db.rawSQL({ q: "SELECT sheet_sync_url FROM admin_settings WHERE id = 'main'", v: [] }).run()
+  const url = (settingsRows && settingsRows[0] && settingsRows[0].sheet_sync_url) || ''
+  const dataFor = async (notice, ok) => ({ ...(await loadAdminPageData(db)), notice, ok })
+  if (!url) {
+    return c.html(adminPage(await dataFor('No Google Sheet URL saved yet — add one below first.', false)), 400)
+  }
+
+  let text = ''
+  try {
+    const res = await fetch(url, { redirect: 'follow' })
+    if (!res.ok) {
+      return c.html(adminPage(await dataFor(`Could not fetch the sheet (HTTP ${res.status}). Check it's still published to the web.`, false)), 502)
+    }
+    text = await res.text()
+  } catch (e) {
+    return c.html(adminPage(await dataFor('Could not reach that URL. Check it is still published to the web.', false)), 502)
+  }
+  if (!text.trim()) {
+    return c.html(adminPage(await dataFor('The sheet returned no content.', false)), 400)
+  }
+
+  const result = await importCsvRows(db, text)
+  return c.html(adminPage(await dataFor(importSummary(result), result.errors.length === 0)))
 })
 
 userApp.get('/robots.txt', (c) => {

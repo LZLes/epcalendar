@@ -85,6 +85,10 @@ const adminSettings = {
     // hand-edited migration data statement instead; worker.ts also falls
     // back to 'admin' if this is ever blank.
     tableField('username', 'text', 'text', {}),
+    // Published-CSV URL (Google Sheets: File > Share > Publish to web,
+    // CSV format) used by the /admin "Sync from Google Sheet" card. Blank
+    // until an admin saves one via POST /admin/sheet-sync-url.
+    tableField('sheet_sync_url', 'text', 'text', {}),
     tableField('password_hash', 'text', 'text', { notNull: true }),
     tableField('password_salt', 'text', 'text', { notNull: true }),
     tableField('updated', 'date', 'timestamp', { notNull: true, default: sql`CURRENT_TIMESTAMP` }),
