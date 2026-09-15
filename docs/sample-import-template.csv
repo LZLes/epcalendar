@@ -1,0 +1,3 @@
+id,session_type,status,date,time,title_en,title_zh,location_en,location_zh,gather_point_en,gather_point_zh,gather_time,dismissal_point_en,dismissal_point_zh,dismissal_time,description_en,description_zh,attire_en,attire_zh,vacancy,meals_provided,emoji
+,in_house,published,2026-10-03,9:30 AM - 11:30 AM,Art & Craft Session,美术与手工课,Towner Gardens School,东苑加登学校,,,,,,,Fun art activities for all,适合所有人的趣味美术活动,Comfortable clothing,舒适服装,15,false,🎨
+,outing,published,2026-10-17,,Zoo Trip,动物园之旅,,,Towner Gardens School,东苑加登学校,9:00 AM,Towner Gardens School,东苑加登学校,4:00 PM,A day trip to the zoo,动物园一日游,Comfortable walking shoes,舒适的步行鞋,20,true,🦁
