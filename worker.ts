@@ -164,14 +164,13 @@ header.top{
 .card .date-line{font-size:calc(12px * var(--fs));font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.03em}
 .card .time-line{font-size:calc(12.5px * var(--fs));color:var(--ink-soft);white-space:nowrap;font-weight:500}
 .card h3{margin:0 0 9px;font-size:calc(16.5px * var(--fs));font-weight:750;line-height:1.32;letter-spacing:-.01em}
-.card .meta-row{display:flex;flex-wrap:wrap;gap:6px 8px;margin-bottom:8px}
-.pill{display:inline-flex;align-items:center;gap:5px;font-size:calc(12px * var(--fs));color:var(--ink-soft);background:var(--chip-bg);
-  border-radius:999px;padding:4px 10px;font-weight:500}
-.pill.vacancy-low{color:var(--danger);background:var(--danger-soft)}
-.pill.vacancy-ok{color:var(--accent-ink);background:var(--accent-soft)}
-.pill.pill-outing{color:var(--accent-ink);background:var(--accent-soft);font-weight:700}
-.pill.pill-link{text-decoration:none;cursor:pointer}
-.pill.pill-link:hover{background:var(--accent-soft);color:var(--accent-ink)}
+.card .details{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;text-align:left}
+.detail-line{font-size:calc(12.5px * var(--fs));color:var(--ink-soft);font-weight:500}
+.detail-line.vacancy-low{color:var(--danger);font-weight:700}
+.detail-line.vacancy-ok{color:var(--accent-ink);font-weight:700}
+.detail-line.outing-label{color:var(--accent-ink);font-weight:700;text-transform:uppercase;font-size:calc(11px * var(--fs));letter-spacing:.03em}
+.detail-line a{color:var(--accent-ink);font-weight:700;text-decoration:none}
+.detail-line a:hover{text-decoration:underline}
 .card p.desc{margin:7px 0 0;font-size:calc(13.5px * var(--fs));color:var(--ink-soft);white-space:pre-line}
 .card-emoji{margin-right:7px;font-size:1.05em}
 .cal-btn{margin-top:11px;border:1px solid var(--border);background:var(--chip-bg);color:var(--ink-soft);
@@ -365,40 +364,39 @@ const CLIENT_SCRIPT = raw(`<script>
           ? [r.gather_time, r.dismissal_time].filter(Boolean).join(' – ')
           : (r.time || '');
 
-        var placePills = '';
+        var details = '';
         if (isOuting) {
-          placePills += '<span class="pill pill-outing">' + esc(t.outingBadge) + '</span>';
+          details += '<div class="detail-line outing-label">' + esc(t.outingBadge) + '</div>';
           if (venue) {
             var venueLabel = icons.location + ' ' + esc(venue);
             var mapUrl = r.venue_map_url || '';
             var mapOk = mapUrl.indexOf('https://') === 0 || mapUrl.indexOf('http://') === 0;
-            placePills += mapOk
-              ? '<a class="pill pill-link" href="' + esc(r.venue_map_url) + '" target="_blank" rel="noopener noreferrer">' + venueLabel + ' ' + esc(t.viewMap) + '</a>'
-              : '<span class="pill">' + venueLabel + '</span>';
+            details += mapOk
+              ? '<div class="detail-line">' + venueLabel + ' <a href="' + esc(r.venue_map_url) + '" target="_blank" rel="noopener noreferrer">' + esc(t.viewMap) + '</a></div>'
+              : '<div class="detail-line">' + venueLabel + '</div>';
           }
           if (gatherPoint) {
-            placePills += '<span class="pill">' + icons.gather + ' ' + esc(t.gather) + ': ' + esc(gatherPoint) +
-              (r.gather_time ? ' · ' + esc(r.gather_time) : '') + '</span>';
+            details += '<div class="detail-line">' + icons.gather + ' ' + esc(t.gather) + ': ' + esc(gatherPoint) +
+              (r.gather_time ? ' · ' + esc(r.gather_time) : '') + '</div>';
           }
           if (dismissalPoint) {
-            placePills += '<span class="pill">' + icons.dismissal + ' ' + esc(t.dismissal) + ': ' + esc(dismissalPoint) +
-              (r.dismissal_time ? ' · ' + esc(r.dismissal_time) : '') + '</span>';
+            details += '<div class="detail-line">' + icons.dismissal + ' ' + esc(t.dismissal) + ': ' + esc(dismissalPoint) +
+              (r.dismissal_time ? ' · ' + esc(r.dismissal_time) : '') + '</div>';
           }
         } else if (location) {
-          placePills += '<span class="pill">' + icons.location + ' ' + esc(location) + '</span>';
+          details += '<div class="detail-line">' + icons.location + ' ' + esc(location) + '</div>';
         }
 
-        var pills = '';
         if (typeof r.vacancy === 'number') {
           var low = r.vacancy <= 0;
-          pills += '<span class="pill' + (low ? ' vacancy-low' : ' vacancy-ok') + '">' +
-            esc(low ? t.vacancyFull : vacancyText(state.lang, r.vacancy)) + '</span>';
+          details += '<div class="detail-line' + (low ? ' vacancy-low' : ' vacancy-ok') + '">' +
+            esc(low ? t.vacancyFull : vacancyText(state.lang, r.vacancy)) + '</div>';
         }
         if (r.meals_provided) {
-          pills += '<span class="pill">' + icons.meals + ' ' + esc(t.meals) + '</span>';
+          details += '<div class="detail-line">' + icons.meals + ' ' + esc(t.meals) + '</div>';
         }
         if (attire) {
-          pills += '<span class="pill">' + icons.attire + ' ' + esc(t.attire) + ': ' + esc(attire) + '</span>';
+          details += '<div class="detail-line">' + icons.attire + ' ' + esc(t.attire) + ': ' + esc(attire) + '</div>';
         }
 
         var icsLocation = isOuting ? (venue || gatherPoint || dismissalPoint || '') : location;
@@ -416,8 +414,7 @@ const CLIENT_SCRIPT = raw(`<script>
               '<span class="time-line">' + esc(timeDisplay) + '</span>' +
             '</div>' +
             '<h3>' + (r.emoji ? '<span class="card-emoji">' + esc(r.emoji) + '</span>' : '') + esc(title) + '</h3>' +
-            (placePills ? '<div class="meta-row">' + placePills + '</div>' : '') +
-            (pills ? '<div class="meta-row">' + pills + '</div>' : '') +
+            (details ? '<div class="details">' + details + '</div>' : '') +
             (desc ? '<p class="desc">' + esc(desc) + '</p>' : '') +
             (isPast ? '' : '<button type="button" class="cal-btn"' + icsAttrs + '>' + icons.date + ' ' + esc(t.addToCalendar) + '</button>') +
           '</div>'

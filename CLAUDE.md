@@ -261,9 +261,9 @@ needs escaping itself rather than relying on the tag.
   as a link, see the gotcha note below), `gather_point_en/zh`,
   `gather_time`, `dismissal_point_en/zh`, `dismissal_time` (all free
   text, required when `session_type` is `'outing'`). The public card
-  shows a venue pill (linked to `venue_map_url` when it passes the scheme
-  check, plain text otherwise) plus gather/dismissal pills instead of a
-  location pill, an "Outing" badge, and derives its date-row time range
+  shows a venue line (linked to `venue_map_url` when it passes the scheme
+  check, plain text otherwise) plus gather/dismissal lines instead of a
+  location line, an "Outing" label, and derives its date-row time range
   as `gather_time – dismissal_time`.
 - `description_en/zh` (optional), `attire_en/zh` (optional), `vacancy`
   (integer, optional), `meals_provided` (bool, optional), `emoji` (text,
