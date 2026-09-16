@@ -166,6 +166,7 @@ header.top{
 .card h3{margin:0 0 9px;font-size:calc(16.5px * var(--fs));font-weight:750;line-height:1.32;letter-spacing:-.01em}
 .card .details{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;text-align:left}
 .detail-line{font-size:calc(12.5px * var(--fs));color:var(--ink-soft);font-weight:500}
+.detail-line strong{font-weight:700}
 .detail-line.vacancy-low{color:var(--danger);font-weight:700}
 .detail-line.vacancy-ok{color:var(--accent-ink);font-weight:700}
 .detail-line.outing-label{color:var(--accent-ink);font-weight:700;text-transform:uppercase;font-size:calc(11px * var(--fs));letter-spacing:.03em}
@@ -202,6 +203,8 @@ const I18N = {
     vacancyFull: 'Fully booked',
     meals: 'Meals provided',
     attire: 'Attire',
+    location: 'Location',
+    venue: 'Venue',
     gather: 'Gather',
     dismissal: 'Dismissal',
     outingBadge: '🚌 Outing',
@@ -220,6 +223,8 @@ const I18N = {
     vacancyFull: '名额已满',
     meals: '提供餐点',
     attire: '服装要求',
+    location: '地点',
+    venue: '地点',
     gather: '集合',
     dismissal: '解散',
     outingBadge: '🚌 外出活动',
@@ -368,7 +373,7 @@ const CLIENT_SCRIPT = raw(`<script>
         if (isOuting) {
           details += '<div class="detail-line outing-label">' + esc(t.outingBadge) + '</div>';
           if (venue) {
-            var venueLabel = icons.location + ' ' + esc(venue);
+            var venueLabel = icons.location + ' <strong>' + esc(t.venue) + ':</strong> ' + esc(venue);
             var mapUrl = r.venue_map_url || '';
             var mapOk = mapUrl.indexOf('https://') === 0 || mapUrl.indexOf('http://') === 0;
             details += mapOk
@@ -376,27 +381,27 @@ const CLIENT_SCRIPT = raw(`<script>
               : '<div class="detail-line">' + venueLabel + '</div>';
           }
           if (gatherPoint) {
-            details += '<div class="detail-line">' + icons.gather + ' ' + esc(t.gather) + ': ' + esc(gatherPoint) +
+            details += '<div class="detail-line">' + icons.gather + ' <strong>' + esc(t.gather) + ':</strong> ' + esc(gatherPoint) +
               (r.gather_time ? ' · ' + esc(r.gather_time) : '') + '</div>';
           }
           if (dismissalPoint) {
-            details += '<div class="detail-line">' + icons.dismissal + ' ' + esc(t.dismissal) + ': ' + esc(dismissalPoint) +
+            details += '<div class="detail-line">' + icons.dismissal + ' <strong>' + esc(t.dismissal) + ':</strong> ' + esc(dismissalPoint) +
               (r.dismissal_time ? ' · ' + esc(r.dismissal_time) : '') + '</div>';
           }
         } else if (location) {
-          details += '<div class="detail-line">' + icons.location + ' ' + esc(location) + '</div>';
+          details += '<div class="detail-line">' + icons.location + ' <strong>' + esc(t.location) + ':</strong> ' + esc(location) + '</div>';
         }
 
         if (typeof r.vacancy === 'number') {
           var low = r.vacancy <= 0;
-          details += '<div class="detail-line' + (low ? ' vacancy-low' : ' vacancy-ok') + '">' +
-            esc(low ? t.vacancyFull : vacancyText(state.lang, r.vacancy)) + '</div>';
+          details += '<div class="detail-line' + (low ? ' vacancy-low' : ' vacancy-ok') + '"><strong>' +
+            esc(low ? t.vacancyFull : vacancyText(state.lang, r.vacancy)) + '</strong></div>';
         }
         if (r.meals_provided) {
-          details += '<div class="detail-line">' + icons.meals + ' ' + esc(t.meals) + '</div>';
+          details += '<div class="detail-line">' + icons.meals + ' <strong>' + esc(t.meals) + '</strong></div>';
         }
         if (attire) {
-          details += '<div class="detail-line">' + icons.attire + ' ' + esc(t.attire) + ': ' + esc(attire) + '</div>';
+          details += '<div class="detail-line">' + icons.attire + ' <strong>' + esc(t.attire) + ':</strong> ' + esc(attire) + '</div>';
         }
 
         var icsLocation = isOuting ? (venue || gatherPoint || dismissalPoint || '') : location;
