@@ -170,6 +170,8 @@ header.top{
 .pill.vacancy-low{color:var(--danger);background:var(--danger-soft)}
 .pill.vacancy-ok{color:var(--accent-ink);background:var(--accent-soft)}
 .pill.pill-outing{color:var(--accent-ink);background:var(--accent-soft);font-weight:700}
+.pill.pill-link{text-decoration:none;cursor:pointer}
+.pill.pill-link:hover{background:var(--accent-soft);color:var(--accent-ink)}
 .card p.desc{margin:7px 0 0;font-size:calc(13.5px * var(--fs));color:var(--ink-soft);white-space:pre-line}
 .card-emoji{margin-right:7px;font-size:1.05em}
 .cal-btn{margin-top:11px;border:1px solid var(--border);background:var(--chip-bg);color:var(--ink-soft);
@@ -204,6 +206,7 @@ const I18N = {
     gather: 'Gather',
     dismissal: 'Dismissal',
     outingBadge: '🚌 Outing',
+    viewMap: '↗ Map',
     emptyTitle: 'No sessions scheduled',
     emptyBody: 'Check back soon — new sessions will appear here as they are added.',
     emptyPastBody: 'No sessions to show yet.',
@@ -221,6 +224,7 @@ const I18N = {
     gather: '集合',
     dismissal: '解散',
     outingBadge: '🚌 外出活动',
+    viewMap: '↗ 地图',
     emptyTitle: '暂无场次安排',
     emptyBody: '请稍后再查看，新的场次会在这里显示。',
     emptyPastBody: '暂无可显示的场次。',
@@ -351,6 +355,7 @@ const CLIENT_SCRIPT = raw(`<script>
         var isOuting = r.session_type === 'outing';
         var title = state.lang === 'zh' ? (r.title_zh || r.title_en) : (r.title_en || r.title_zh);
         var location = state.lang === 'zh' ? (r.location_zh || r.location_en) : (r.location_en || r.location_zh);
+        var venue = state.lang === 'zh' ? (r.venue_zh || r.venue_en) : (r.venue_en || r.venue_zh);
         var gatherPoint = state.lang === 'zh' ? (r.gather_point_zh || r.gather_point_en) : (r.gather_point_en || r.gather_point_zh);
         var dismissalPoint = state.lang === 'zh' ? (r.dismissal_point_zh || r.dismissal_point_en) : (r.dismissal_point_en || r.dismissal_point_zh);
         var desc = state.lang === 'zh' ? r.description_zh : r.description_en;
@@ -363,6 +368,14 @@ const CLIENT_SCRIPT = raw(`<script>
         var placePills = '';
         if (isOuting) {
           placePills += '<span class="pill pill-outing">' + esc(t.outingBadge) + '</span>';
+          if (venue) {
+            var venueLabel = icons.location + ' ' + esc(venue);
+            var mapUrl = r.venue_map_url || '';
+            var mapOk = mapUrl.indexOf('https://') === 0 || mapUrl.indexOf('http://') === 0;
+            placePills += mapOk
+              ? '<a class="pill pill-link" href="' + esc(r.venue_map_url) + '" target="_blank" rel="noopener noreferrer">' + venueLabel + ' ' + esc(t.viewMap) + '</a>'
+              : '<span class="pill">' + venueLabel + '</span>';
+          }
           if (gatherPoint) {
             placePills += '<span class="pill">' + icons.gather + ' ' + esc(t.gather) + ': ' + esc(gatherPoint) +
               (r.gather_time ? ' · ' + esc(r.gather_time) : '') + '</span>';
@@ -388,7 +401,7 @@ const CLIENT_SCRIPT = raw(`<script>
           pills += '<span class="pill">' + icons.attire + ' ' + esc(t.attire) + ': ' + esc(attire) + '</span>';
         }
 
-        var icsLocation = isOuting ? (gatherPoint || dismissalPoint || '') : location;
+        var icsLocation = isOuting ? (venue || gatherPoint || dismissalPoint || '') : location;
         var icsAttrs =
           ' data-ics-date="' + esc(r.date) + '"' +
           ' data-ics-time="' + esc(timeDisplay) + '"' +
@@ -695,9 +708,10 @@ userApp.get('/', async (c) => {
 
 const ADMIN_REALM = 'EP Admin'
 // 'session_type' first, followed by the in-house fields (location/time),
-// the outing fields (gather/dismissal), then the fields common to both.
+// the outing fields (venue/gather/dismissal), then the fields common to both.
 const SESSION_COLUMNS = [
   'session_type', 'status', 'date', 'time', 'title_en', 'title_zh', 'location_en', 'location_zh',
+  'venue_en', 'venue_zh', 'venue_map_url',
   'gather_point_en', 'gather_point_zh', 'gather_time',
   'dismissal_point_en', 'dismissal_point_zh', 'dismissal_time',
   'description_en', 'description_zh', 'attire_en', 'attire_zh',
@@ -740,6 +754,9 @@ function sessionValuesFromForm(body) {
     title_zh: str('title_zh'),
     location_en: str('location_en'),
     location_zh: str('location_zh'),
+    venue_en: str('venue_en'),
+    venue_zh: str('venue_zh'),
+    venue_map_url: str('venue_map_url'),
     gather_point_en: str('gather_point_en'),
     gather_point_zh: str('gather_point_zh'),
     gather_time: str('gather_time'),
@@ -774,6 +791,7 @@ function validateSessionValues(v) {
     if (!v.time) return 'Time is required.'
   }
   if (v.vacancy !== null && (Number.isNaN(v.vacancy) || v.vacancy < 0)) return 'Vacancy must be a non-negative number.'
+  if (v.venue_map_url && !/^https?:\/\//i.test(v.venue_map_url)) return 'Map link must start with http:// or https://'
   return null
 }
 
@@ -1125,6 +1143,14 @@ function sessionFormPage({ session, action, title, notice, ok } = {}) {
 
       <div data-type-group="outing">
         <div class="field-pair">
+          <div><label for="venue_en">Venue (EN)</label><input type="text" id="venue_en" name="venue_en" value="${val('venue_en')}" placeholder="Singapore Zoo"/></div>
+          <div><label for="venue_zh">Venue (中文)</label><input type="text" id="venue_zh" name="venue_zh" value="${val('venue_zh')}"/></div>
+        </div>
+        <div class="field-pair">
+          <div><label for="venue_map_url">Map link (optional)</label><input type="text" id="venue_map_url" name="venue_map_url" value="${val('venue_map_url')}" placeholder="https://maps.google.com/?q=..."/></div>
+          <div></div>
+        </div>
+        <div class="field-pair">
           <div><label for="gather_point_en">Gather point (EN)</label><input type="text" id="gather_point_en" name="gather_point_en" value="${val('gather_point_en')}"/></div>
           <div><label for="gather_point_zh">Gather point (中文)</label><input type="text" id="gather_point_zh" name="gather_point_zh" value="${val('gather_point_zh')}"/></div>
         </div>
@@ -1328,6 +1354,9 @@ async function importCsvRows(db, text) {
         title_zh: raw.title_zh || null,
         location_en: raw.location_en || null,
         location_zh: raw.location_zh || null,
+        venue_en: raw.venue_en || null,
+        venue_zh: raw.venue_zh || null,
+        venue_map_url: raw.venue_map_url || null,
         gather_point_en: raw.gather_point_en || null,
         gather_point_zh: raw.gather_point_zh || null,
         gather_time: raw.gather_time || null,

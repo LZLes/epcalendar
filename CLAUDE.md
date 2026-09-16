@@ -137,6 +137,25 @@ source characters. Instead:
   HTML page) should use `c.text()` / `c.body()` / `c.json()` directly and
   can use normal escape sequences freely — see `/admin/export.csv`.
 
+**A slash-delimited regex literal in `CLIENT_SCRIPT` contains backslashes
+too, and is affected the same way — this actually shipped a broken
+security check once.** `/^https?:\/\//i.test(url)` (checking `venue_map_url` is
+`http(s)://` before rendering it as a clickable link) got served with
+its `\/\/ ` corrupted down to `//`, which — because a bare `//` starts a
+JS line comment — silently turned `/^https?:/` + `/i.test(url) ...` into
+"assign a regex literal to `mapOk`, then comment out the rest of the
+line". A regex object is always truthy, so the "check" passed for every
+value including `javascript:alert(1)`. Fixed by dropping the regex
+entirely in favor of `url.indexOf('https://') === 0 ||
+url.indexOf('http://') === 0` (see the venue-map-link render code) — no
+backslashes, so nothing for the pipeline to corrupt. **Any client-side
+regex literal with an unescaped-looking `/` in its pattern (which needs
+`\/` to not end the literal early) is a landmine here — prefer
+`new RegExp('...')` from a string, or (usually simpler) a plain
+`indexOf`/`slice`/`split` check instead**, same as the newline/backslash
+advice above. This bug is easy to miss in testing because the corrupted
+regex doesn't throw — it just silently stops checking anything.
+
 ## Admin portal (`/admin`)
 
 Built because PocketUI's own login password can't be changed via the
@@ -235,11 +254,17 @@ needs escaping itself rather than relying on the tag.
 - `date`, `title_en/zh` — always required, even for a draft.
 - **In-house fields:** `location_en/zh`, `time` (free text, e.g.
   "9:30 AM – 11:30 AM"). Required when `session_type` is `'in_house'`.
-- **Outing fields:** `gather_point_en/zh`, `gather_time`,
-  `dismissal_point_en/zh`, `dismissal_time` (all free text). Required
-  when `session_type` is `'outing'`. The public card shows these instead
-  of a location pill, plus an "Outing" badge, and derives its
-  date-row time range as `gather_time – dismissal_time`.
+- **Outing fields:** `venue_en/zh` (the destination itself, e.g. "Singapore
+  Zoo" — optional, not required to publish), `venue_map_url` (optional;
+  must start with `http://` or `https://` — enforced server-side in
+  `validateSessionValues()`, and re-checked client-side before rendering
+  as a link, see the gotcha note below), `gather_point_en/zh`,
+  `gather_time`, `dismissal_point_en/zh`, `dismissal_time` (all free
+  text, required when `session_type` is `'outing'`). The public card
+  shows a venue pill (linked to `venue_map_url` when it passes the scheme
+  check, plain text otherwise) plus gather/dismissal pills instead of a
+  location pill, an "Outing" badge, and derives its date-row time range
+  as `gather_time – dismissal_time`.
 - `description_en/zh` (optional), `attire_en/zh` (optional), `vacancy`
   (integer, optional), `meals_provided` (bool, optional), `emoji` (text,
   optional — shown before the title on the card).

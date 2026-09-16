@@ -37,6 +37,12 @@ const sessions = {
     tableField('location_en', 'text', 'text', {}),
     tableField('location_zh', 'text', 'text', {}),
 
+    // Outings only — the destination itself (distinct from the
+    // gather/dismissal points below, which are pickup/dropoff logistics).
+    tableField('venue_en', 'text', 'text', {}),
+    tableField('venue_zh', 'text', 'text', {}),
+    tableField('venue_map_url', 'text', 'text', {}), // e.g. a Google Maps link
+
     // Outings only.
     tableField('gather_point_en', 'text', 'text', {}),
     tableField('gather_point_zh', 'text', 'text', {}),
