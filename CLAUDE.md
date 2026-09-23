@@ -167,6 +167,15 @@ read/written via `db.rawSQL()` since that table's rules are all `null` —
 no public REST route exists for it at all. A blank/`NULL` username in
 the DB is treated as `'admin'` (see `requireAdmin()`). From the page:
 
+Native `<input type=date>`/`<input type=time>` fields render at a
+slightly different intrinsic height once they hold a value vs. an empty
+placeholder state, which without an explicit height looked like the box
+"grows"/shifts the moment a date or time is picked. `ADMIN_STYLE` pins
+`height:38px` (plus `appearance:none` and a normalized picker-icon style)
+on both, verified with Playwright (`getBoundingClientRect()` identical
+before/after filling `#date`) — if a future field adds either input type,
+it needs the same treatment or it'll drift from the rest of the form.
+
 - **Sessions list** — every session, soonest first, with a `Draft` tag
   on draft rows (dimmed row, italic title) and an `Outing` tag on outing
   rows, Edit/Delete per row, and an "+ Add session" button. `GET /admin`.
@@ -208,6 +217,41 @@ the DB is treated as `'admin'` (see `requireAdmin()`). From the page:
   "Sync now" pulls whatever is in the Sheet *right now*, not a snapshot
   from when the URL was saved. See `docs/sample-import-template.csv` for
   the expected column headers (same as the CSV export).
+- **Default gather/dismissal points** — `POST /admin/location-presets`
+  saves `admin_settings.location_presets` as newline-separated `EN|ZH`
+  pairs (parsed by `parseLocationPresets()`; read by `getLocationPresetsRaw()`
+  for the management textarea and by the 4 session-form routes for the
+  dropdown itself). The session form renders a "Quick fill" `<select>`
+  above the gather-point and above the dismissal-point field pairs
+  (`presetSelect()` in `sessionFormPage()`) — each `<option>` carries the
+  Chinese half in a `data-zh` attribute since a `<select>` only has one
+  value; a small inline script (no backslash escapes, see the gotcha
+  above) fills both EN/ZH inputs on `change` and resets the dropdown back
+  to its placeholder. Purely a form-filling convenience — doesn't touch
+  validation or storage, and CSV import/Google Sheet sync are unaffected
+  (they write `gather_point_en/zh`/`dismissal_point_en/zh` directly).
+- **Time pickers** — `time_start`/`time_end` (in-house), `gather_time_picker`,
+  `dismissal_time_picker` (outings) are native `<input type="time">`
+  fields (24-hour `HH:MM`), formatted into the existing free-text
+  `time`/`gather_time`/`dismissal_time` columns via `formatTime12()` in
+  `sessionValuesFromForm()` (e.g. `13:40` → `1:40 PM`; the in-house
+  `time` column stays a single "start – end" string, joined from the two
+  pickers). Each also has a manual fallback text input (`time_manual`,
+  `gather_time_manual`, `dismissal_time_manual`) used only when its
+  picker is left blank — for a legacy/non-standard value a picker can't
+  express (e.g. "TBC", "All day"). Editing an existing session
+  reverse-parses the stored free text back into the picker via
+  `parseTimePoint()`/`parseTimeRange()` (best-effort regex, accepts a
+  colon *or period* separator — real data has both, e.g. "9:00 AM" and
+  "1.40 PM"); when it doesn't parse, the picker is left blank and the
+  original text is preserved in the manual field instead, so nothing is
+  ever silently dropped. A validation-failure redisplay (`session ===`
+  the raw POST body) shows exactly what was just submitted rather than
+  re-parsing, via the `pick()` helper in `sessionFormPage()`. These
+  parse/format helpers are plain server-side functions (never themselves
+  embedded as page text via `html()`/`c.html()`), so their normal
+  regex/backslash usage is unaffected by the gotcha above — unlike the
+  client-side `mapOk` regex that broke.
 - **Customize icons** — `POST /admin/icons`, upserts the single
   `icon_settings` row (`id = 'main'`) with the emoji shown next to the
   add-to-calendar button, location, attire, meals, gather point, and
@@ -297,8 +341,17 @@ field or a missing row both fall back to `DEFAULT_ICONS`.
 
 - All rendering is client-side from an embedded, base64-encoded JSON
   blob (see gotcha below) — no client→server fetch after the initial
-  page load. Language toggle, "show past sessions", dark mode, font
-  size, and the outing/in-house card layout are all instant, no reload.
+  page load. Language toggle, "show past sessions", month filter, dark
+  mode, font size, and the outing/in-house card layout are all instant,
+  no reload.
+- Month filter: a `<select id="monthFilter">` next to "Show past
+  sessions", rebuilt every `render()` call from whatever `groups` the
+  current past/future filter produced (so it only ever offers months
+  that actually have a visible session — a past month simply isn't in
+  the list while "Show past sessions" is off). `state.monthFilter`
+  resets to `'all'` if the previously-selected key stops being valid
+  (e.g. toggling "Show past sessions" off hides the only session in a
+  past month) — see `render()` in `CLIENT_SCRIPT`.
 - "Upcoming" is computed against *today in Asia/Singapore time*
   (`Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Singapore'})`), not the
   visitor's local timezone.

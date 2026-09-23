@@ -152,6 +152,9 @@ header.top{
 .subhead h2{font-size:calc(12.5px * var(--fs));margin:0;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.07em}
 .past-toggle{display:flex;align-items:center;gap:8px;font-size:calc(13px * var(--fs));color:var(--ink-soft);cursor:pointer;user-select:none}
 .past-toggle input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+.subhead-controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.month-filter{font-size:calc(13px * var(--fs));color:var(--ink-soft);border:1px solid var(--border);
+  border-radius:8px;padding:5px 8px;background:var(--card);cursor:pointer;font-family:inherit}
 .month-group{margin-bottom:24px}
 .month-label{position:sticky;top:var(--header-h);z-index:10;background:var(--bg);
   font-size:calc(13px * var(--fs));font-weight:800;color:var(--accent-ink);margin:0 0 10px;
@@ -207,6 +210,7 @@ const I18N = {
     subtitle: 'Session calendar',
     upcoming: 'Upcoming sessions',
     showPast: 'Show past sessions',
+    allMonths: 'All months',
     vacancyFull: 'Fully booked',
     meals: 'Meals provided',
     attire: 'Attire',
@@ -228,6 +232,7 @@ const I18N = {
     subtitle: '活动日历',
     upcoming: '即将举行的场次',
     showPast: '显示已过去的场次',
+    allMonths: '所有月份',
     vacancyFull: '名额已满',
     meals: '提供餐点',
     attire: '服装要求',
@@ -271,7 +276,7 @@ const DEFAULT_ICONS = {
 const CLIENT_SCRIPT = raw(`<script>
 (function () {
   var TZ = 'Asia/Singapore';
-  var state = { lang: 'en', showPast: false };
+  var state = { lang: 'en', showPast: false, monthFilter: 'all' };
 
   function fromBase64Utf8(b64) {
     var binary = atob(b64);
@@ -341,9 +346,12 @@ const CLIENT_SCRIPT = raw(`<script>
     var visible = rows.filter(function (r) { return state.showPast || r.date >= today; });
 
     var listEl = document.getElementById('list');
+    var monthSelect = document.getElementById('monthFilter');
     applyStaticI18n();
 
     if (visible.length === 0) {
+      monthSelect.innerHTML = '<option value="all">' + esc(t.allMonths) + '</option>';
+      state.monthFilter = 'all';
       listEl.innerHTML =
         '<div class="empty-state"><div class="big">🗓️</div>' +
         '<div><strong>' + esc(t.emptyTitle) + '</strong></div>' +
@@ -362,7 +370,17 @@ const CLIENT_SCRIPT = raw(`<script>
       groupsByKey[key].items.push(r);
     });
 
-    var htmlOut = groups.map(function (g) {
+    var validKeys = groups.map(function (g) { return g.key; });
+    if (state.monthFilter !== 'all' && validKeys.indexOf(state.monthFilter) === -1) state.monthFilter = 'all';
+    monthSelect.innerHTML = '<option value="all">' + esc(t.allMonths) + '</option>' +
+      groups.map(function (g) {
+        return '<option value="' + esc(g.key) + '"' + (g.key === state.monthFilter ? ' selected' : '') + '>' + esc(g.label) + '</option>';
+      }).join('');
+    monthSelect.value = state.monthFilter;
+
+    var visibleGroups = state.monthFilter === 'all' ? groups : groups.filter(function (g) { return g.key === state.monthFilter; });
+
+    var htmlOut = visibleGroups.map(function (g) {
       var cards = g.items.map(function (r) {
         var isPast = r.date < today;
         var isOuting = r.session_type === 'outing';
@@ -456,6 +474,11 @@ const CLIENT_SCRIPT = raw(`<script>
 
   document.getElementById('showPastToggle').addEventListener('change', function (e) {
     state.showPast = !!e.target.checked;
+    render();
+  });
+
+  document.getElementById('monthFilter').addEventListener('change', function (e) {
+    state.monthFilter = e.target.value;
     render();
   });
 
@@ -644,10 +667,15 @@ function renderPage(sessionsJson, icons) {
 
   <div class="subhead">
     <h2 data-i18n="upcoming">Upcoming sessions</h2>
-    <label class="past-toggle">
-      <input type="checkbox" id="showPastToggle" />
-      <span data-i18n="showPast">Show past sessions</span>
-    </label>
+    <div class="subhead-controls">
+      <select id="monthFilter" class="month-filter" aria-label="Filter by month">
+        <option value="all">All months</option>
+      </select>
+      <label class="past-toggle">
+        <input type="checkbox" id="showPastToggle" />
+        <span data-i18n="showPast">Show past sessions</span>
+      </label>
+    </div>
   </div>
 
   <div id="list"></div>
@@ -749,12 +777,74 @@ function updateSessionValues(id, v) {
   return [...SESSION_COLUMNS.map((c) => v[c]), id]
 }
 
+// Native <input type=time> gives "HH:MM" 24-hour values; the app has
+// always stored/displayed times as free text like "9:00 AM" (and, for
+// in-house sessions, a whole range like "9:30 AM - 11:30 AM" in one
+// column) — these convert between the two so the picker sits on top of
+// the existing text columns without a schema/display change. Plain
+// server-side helpers, never embedded as page text via html()/c.html(),
+// so normal regex/backslash usage here is unaffected by the gotcha
+// documented in CLAUDE.md.
+function formatTime12(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || '')
+  if (!m) return ''
+  let h = parseInt(m[1], 10)
+  const min = m[2]
+  const suffix = h >= 12 ? 'PM' : 'AM'
+  h = h % 12
+  if (h === 0) h = 12
+  return `${h}:${min} ${suffix}`
+}
+
+// Best-effort reverse parse of existing free-text time values into
+// 24-hour "HH:MM", so editing a session that already has a normally
+// formatted time pre-fills the picker instead of leaving it blank.
+// Accepts a colon or a period as the separator ("9:00 AM" and "1.40 PM"
+// both appear in real data). Returns null — not '00:00' — when it can't
+// confidently parse; callers must treat that as "leave the picker
+// empty, fall back to the manual text field" rather than midnight.
+function parseTimePoint(text) {
+  const m = /^(\d{1,2})[:.](\d{2})\s*([AaPp][Mm])$/.exec((text || '').trim())
+  if (!m) return null
+  let h = parseInt(m[1], 10)
+  const min = m[2]
+  const isPM = m[3].toLowerCase() === 'pm'
+  if (h === 12) h = 0
+  if (isPM) h += 12
+  if (h > 23) return null
+  return `${String(h).padStart(2, '0')}:${min}`
+}
+
+function parseTimeRange(text) {
+  const parts = (text || '').split('-').map((s) => s.trim())
+  if (parts.length !== 2) return null
+  const start = parseTimePoint(parts[0])
+  const end = parseTimePoint(parts[1])
+  if (!start || !end) return null
+  return { start, end }
+}
+
 // Shared coercion for the add/edit session forms (POST body -> DB values).
 // Text fields become NULL when blank so optional columns stay empty
 // rather than storing empty strings; the checkbox is present ('on') only
 // when checked, per standard HTML form submission behavior.
 function sessionValuesFromForm(body) {
   const str = (k) => (String(body[k] || '').trim() || null)
+  // A picker value ("HH:MM", 24-hour) wins when present; otherwise fall
+  // back to the manual text field, for a legacy/non-standard time that
+  // doesn't fit a picker (e.g. "TBC", "All day").
+  const pickTime = (pickerKey, manualKey) => {
+    const picked = String(body[pickerKey] || '').trim()
+    return picked ? formatTime12(picked) : str(manualKey)
+  }
+  const timeRange = () => {
+    const start = String(body.time_start || '').trim()
+    const end = String(body.time_end || '').trim()
+    if (start && end) return `${formatTime12(start)} - ${formatTime12(end)}`
+    if (start) return formatTime12(start)
+    if (end) return formatTime12(end)
+    return str('time_manual')
+  }
   return {
     session_type: body.session_type === 'outing' ? 'outing' : 'in_house',
     // Which submit button was clicked — 'draft' (name="intent"
@@ -762,7 +852,7 @@ function sessionValuesFromForm(body) {
     // missing/unrecognized, so an old bookmarked form still publishes).
     status: body.intent === 'draft' ? 'draft' : 'published',
     date: str('date'),
-    time: str('time'),
+    time: timeRange(),
     title_en: str('title_en'),
     title_zh: str('title_zh'),
     location_en: str('location_en'),
@@ -772,10 +862,10 @@ function sessionValuesFromForm(body) {
     venue_map_url: str('venue_map_url'),
     gather_point_en: str('gather_point_en'),
     gather_point_zh: str('gather_point_zh'),
-    gather_time: str('gather_time'),
+    gather_time: pickTime('gather_time_picker', 'gather_time_manual'),
     dismissal_point_en: str('dismissal_point_en'),
     dismissal_point_zh: str('dismissal_point_zh'),
-    dismissal_time: str('dismissal_time'),
+    dismissal_time: pickTime('dismissal_time_picker', 'dismissal_time_manual'),
     description_en: str('description_en'),
     description_zh: str('description_zh'),
     schedule_en: str('schedule_en'),
@@ -906,10 +996,21 @@ const ADMIN_STYLE = raw(`<style>
 .admin-card ol.hint-steps li{margin-bottom:5px}
 .admin-card label{display:block;font-size:12.5px;font-weight:600;margin:10px 0 4px;color:var(--ink-soft)}
 .admin-card input[type=password],.admin-card input[type=file],.admin-card input[type=text],
-.admin-card input[type=date],.admin-card input[type=number],.admin-card textarea{
-  width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13.5px;
-  background:var(--bg);color:var(--ink);font-family:inherit}
+.admin-card input[type=date],.admin-card input[type=time],.admin-card input[type=number],.admin-card textarea{
+  width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13.5px;
+  line-height:1.4;background:var(--bg);color:var(--ink);font-family:inherit}
 .admin-card textarea{min-height:80px;resize:vertical}
+/* Native date/time inputs render at a slightly different intrinsic
+   height than a plain text input once they hold a value (vs. an empty
+   placeholder state), which without a fixed height can look like the
+   box "grows"/shifts the moment a date or time is picked. Pinning the
+   height (and normalizing the platform styling of the picker icon)
+   keeps it identical to every other field in both states. */
+.admin-card input[type=date],.admin-card input[type=time]{
+  height:38px;-webkit-appearance:none;appearance:none}
+.admin-card input[type=date]::-webkit-calendar-picker-indicator,
+.admin-card input[type=time]::-webkit-calendar-picker-indicator{
+  cursor:pointer;opacity:.7;margin-left:4px}
 .admin-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
 .admin-btn{border:none;border-radius:8px;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;
   background:linear-gradient(135deg,var(--accent) 0%,var(--accent-2) 100%);color:#fff}
@@ -954,10 +1055,11 @@ ${PAGE_STYLE}
 ${ADMIN_STYLE}`
 }
 
-function adminPage({ notice, ok, sessions, username, sheetSyncUrl, icons } = {}) {
+function adminPage({ notice, ok, sessions, username, sheetSyncUrl, icons, locationPresetsRaw } = {}) {
   const rows = sessions || []
   const user = username || 'admin'
   const sheetUrl = sheetSyncUrl || ''
+  const presetsText = locationPresetsRaw || ''
   const ic = icons || {}
   const iconVal = (k, fallbackKey) => ic[k] || DEFAULT_ICONS[fallbackKey] || ''
   return html`<!doctype html><html lang="en"><head>${adminHeader('Admin')}</head><body>
@@ -1059,6 +1161,18 @@ function adminPage({ notice, ok, sessions, username, sheetSyncUrl, icons } = {})
   </div>
 
   <div class="admin-card">
+    <h2>Default gather/dismissal points</h2>
+    <p class="hint">Save frequently-used pickup/dropoff points once, then pick them from a "Quick fill" dropdown when
+      adding or editing an outing instead of retyping them. One point per line, English and 中文 separated by
+      <code>|</code> — for example:</p>
+    <p class="hint" style="font-family:monospace;background:var(--chip-bg);padding:8px 10px;border-radius:8px">Eunos MRT|友诺士地铁站<br/>Towner Gardens School|东苑加登学校</p>
+    <form method="post" action="/admin/location-presets">
+      <textarea name="location_presets" rows="4" placeholder="Eunos MRT|友诺士地铁站">${escHtml(presetsText)}</textarea>
+      <div class="admin-actions"><button class="admin-btn secondary" type="submit">Save points</button></div>
+    </form>
+  </div>
+
+  <div class="admin-card">
     <h2>Customize icons</h2>
     <p class="hint">The small emoji shown next to certain details on the public calendar — each box already shows
       what's currently used (the default, unless you've changed it before). Type any emoji into a box to replace
@@ -1115,11 +1229,35 @@ function escHtml(s) {
   })
 }
 
-function sessionFormPage({ session, action, title, notice, ok } = {}) {
+function sessionFormPage({ session, action, title, notice, ok, locationPresets } = {}) {
   const s = session || {}
   const val = (k) => escHtml(s[k])
   const type = s.session_type === 'outing' ? 'outing' : 'in_house'
   const isDraft = s.status === 'draft'
+  const presets = locationPresets || []
+
+  // A validation-failure redisplay carries the exact picker/manual field
+  // values the admin just submitted (session === the raw form body) —
+  // prefer those over re-parsing. A fresh edit-load carries only the
+  // combined free-text DB columns, so parse those instead.
+  const pick = (key, fallback) => (s[key] !== undefined ? s[key] : fallback)
+  const timeRangeParsed = parseTimeRange(s.time)
+  const timeStartVal = escHtml(pick('time_start', timeRangeParsed ? timeRangeParsed.start : ''))
+  const timeEndVal = escHtml(pick('time_end', timeRangeParsed ? timeRangeParsed.end : ''))
+  const timeManualVal = escHtml(pick('time_manual', !timeRangeParsed && s.time ? s.time : ''))
+  const gatherParsed = parseTimePoint(s.gather_time)
+  const gatherPickerVal = escHtml(pick('gather_time_picker', gatherParsed || ''))
+  const gatherManualVal = escHtml(pick('gather_time_manual', !gatherParsed && s.gather_time ? s.gather_time : ''))
+  const dismissalParsed = parseTimePoint(s.dismissal_time)
+  const dismissalPickerVal = escHtml(pick('dismissal_time_picker', dismissalParsed || ''))
+  const dismissalManualVal = escHtml(pick('dismissal_time_manual', !dismissalParsed && s.dismissal_time ? s.dismissal_time : ''))
+
+  const presetOptions = presets.map((p) =>
+    `<option value="${escHtml(p.en)}" data-zh="${escHtml(p.zh)}">${escHtml(p.en)}${p.zh ? ' / ' + escHtml(p.zh) : ''}</option>`
+  ).join('')
+  const presetSelect = (targetEn, targetZh) => presets.length === 0 ? '' :
+    `<div class="field-pair"><div><label>Quick fill</label><select class="preset-select" data-target-en="${targetEn}" data-target-zh="${targetZh}">` +
+    `<option value="">&mdash; choose a saved point &mdash;</option>${presetOptions}</select></div><div></div></div>`
   return html`<!doctype html><html lang="en"><head>${adminHeader(title)}</head><body>
 <div class="admin-wrap narrow">
   <a class="back-link" href="/admin">&larr; Back to admin</a>
@@ -1151,7 +1289,12 @@ function sessionFormPage({ session, action, title, notice, ok } = {}) {
           <div><label for="location_zh">Location (中文)</label><input type="text" id="location_zh" name="location_zh" value="${val('location_zh')}"/></div>
         </div>
         <div class="field-pair">
-          <div><label for="time">Start &ndash; end time</label><input type="text" id="time" name="time" value="${val('time')}" placeholder="9:30 AM - 11:30 AM"/></div>
+          <div><label for="time_start">Start time</label><input type="time" id="time_start" name="time_start" value="${timeStartVal}"/></div>
+          <div><label for="time_end">End time</label><input type="time" id="time_end" name="time_end" value="${timeEndVal}"/></div>
+        </div>
+        <div class="field-pair">
+          <div><label for="time_manual">Or enter manually (used only if both times above are blank)</label>
+            <input type="text" id="time_manual" name="time_manual" value="${timeManualVal}" placeholder="e.g. All day, TBC"/></div>
           <div></div>
         </div>
       </div>
@@ -1165,21 +1308,23 @@ function sessionFormPage({ session, action, title, notice, ok } = {}) {
           <div><label for="venue_map_url">Map link (optional)</label><input type="text" id="venue_map_url" name="venue_map_url" value="${val('venue_map_url')}" placeholder="https://maps.google.com/?q=..."/></div>
           <div></div>
         </div>
+        ${raw(presetSelect('gather_point_en', 'gather_point_zh'))}
         <div class="field-pair">
           <div><label for="gather_point_en">Gather point (EN)</label><input type="text" id="gather_point_en" name="gather_point_en" value="${val('gather_point_en')}"/></div>
           <div><label for="gather_point_zh">Gather point (中文)</label><input type="text" id="gather_point_zh" name="gather_point_zh" value="${val('gather_point_zh')}"/></div>
         </div>
         <div class="field-pair">
-          <div><label for="gather_time">Gather time</label><input type="text" id="gather_time" name="gather_time" value="${val('gather_time')}" placeholder="9:00 AM"/></div>
-          <div></div>
+          <div><label for="gather_time_picker">Gather time</label><input type="time" id="gather_time_picker" name="gather_time_picker" value="${gatherPickerVal}"/></div>
+          <div><label for="gather_time_manual">Or enter manually</label><input type="text" id="gather_time_manual" name="gather_time_manual" value="${gatherManualVal}" placeholder="e.g. TBC"/></div>
         </div>
+        ${raw(presetSelect('dismissal_point_en', 'dismissal_point_zh'))}
         <div class="field-pair">
           <div><label for="dismissal_point_en">Dismissal point (EN)</label><input type="text" id="dismissal_point_en" name="dismissal_point_en" value="${val('dismissal_point_en')}"/></div>
           <div><label for="dismissal_point_zh">Dismissal point (中文)</label><input type="text" id="dismissal_point_zh" name="dismissal_point_zh" value="${val('dismissal_point_zh')}"/></div>
         </div>
         <div class="field-pair">
-          <div><label for="dismissal_time">Dismissal time</label><input type="text" id="dismissal_time" name="dismissal_time" value="${val('dismissal_time')}" placeholder="4:00 PM"/></div>
-          <div></div>
+          <div><label for="dismissal_time_picker">Dismissal time</label><input type="time" id="dismissal_time_picker" name="dismissal_time_picker" value="${dismissalPickerVal}"/></div>
+          <div><label for="dismissal_time_manual">Or enter manually</label><input type="text" id="dismissal_time_manual" name="dismissal_time_manual" value="${dismissalManualVal}" placeholder="e.g. TBC"/></div>
         </div>
       </div>
 
@@ -1228,6 +1373,18 @@ function sessionFormPage({ session, action, title, notice, ok } = {}) {
   }
   radios.forEach(function (r) { r.addEventListener('change', sync); });
   sync();
+
+  document.querySelectorAll('.preset-select').forEach(function (sel) {
+    sel.addEventListener('change', function () {
+      var opt = sel.options[sel.selectedIndex];
+      if (!opt || !opt.value) return;
+      var enTarget = document.getElementById(sel.getAttribute('data-target-en'));
+      var zhTarget = document.getElementById(sel.getAttribute('data-target-zh'));
+      if (enTarget) enTarget.value = opt.value;
+      if (zhTarget) zhTarget.value = opt.getAttribute('data-zh') || '';
+      sel.selectedIndex = 0;
+    });
+  });
 })();
 </script>
 </body></html>`
@@ -1241,15 +1398,35 @@ async function listSessionsForAdmin(db) {
 // Bundles everything adminPage() needs to render (sessions list, current
 // username, current icons) so every route that redisplays the admin page
 // after a POST doesn't have to fetch each piece by hand.
+// Newline-separated "EN|ZH" pairs -> [{en, zh}], used for the gather/
+// dismissal quick-fill dropdown on the session form. Plain server-side
+// string handling, not affected by the html()/c.html() gotcha.
+function parseLocationPresets(text) {
+  return (text || '').split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split('|')
+      return { en: (parts[0] || '').trim(), zh: (parts[1] || '').trim() }
+    })
+    .filter((p) => p.en)
+}
+
+async function getLocationPresetsRaw(db) {
+  const rows = await db.rawSQL({ q: "SELECT location_presets FROM admin_settings WHERE id = 'main'", v: [] }).run()
+  return (rows && rows[0] && rows[0].location_presets) || ''
+}
+
 async function loadAdminPageData(db) {
   const [sessions, settingsRows, iconRows] = await Promise.all([
     listSessionsForAdmin(db),
-    db.rawSQL({ q: "SELECT username, sheet_sync_url FROM admin_settings WHERE id = 'main'", v: [] }).run(),
+    db.rawSQL({ q: "SELECT username, sheet_sync_url, location_presets FROM admin_settings WHERE id = 'main'", v: [] }).run(),
     db.rawSQL({ q: 'SELECT * FROM icon_settings WHERE id = ?', v: ['main'] }).run(),
   ])
   const settings = (settingsRows && settingsRows[0]) || {}
   const username = settings.username || 'admin'
   const sheetSyncUrl = settings.sheet_sync_url || ''
+  const locationPresetsRaw = settings.location_presets || ''
   const iconRow = (iconRows && iconRows[0]) || {}
   const icons = {
     icon_date: iconRow.icon_date || DEFAULT_ICONS.date,
@@ -1259,7 +1436,7 @@ async function loadAdminPageData(db) {
     icon_gather: iconRow.icon_gather || DEFAULT_ICONS.gather,
     icon_dismissal: iconRow.icon_dismissal || DEFAULT_ICONS.dismissal,
   }
-  return { sessions, username, sheetSyncUrl, icons }
+  return { sessions, username, sheetSyncUrl, icons, locationPresetsRaw }
 }
 
 userApp.get('/admin', async (c) => {
@@ -1272,7 +1449,8 @@ userApp.get('/admin', async (c) => {
 userApp.get('/admin/sessions/new', async (c) => {
   const db = await requireAdmin(c)
   if (!db) return unauthorized(c)
-  return c.html(sessionFormPage({ action: '/admin/sessions/new', title: 'Add session' }))
+  const locationPresets = parseLocationPresets(await getLocationPresetsRaw(db))
+  return c.html(sessionFormPage({ action: '/admin/sessions/new', title: 'Add session', locationPresets }))
 })
 
 userApp.post('/admin/sessions/new', async (c) => {
@@ -1281,7 +1459,10 @@ userApp.post('/admin/sessions/new', async (c) => {
   const body = await c.req.parseBody()
   const values = sessionValuesFromForm(body)
   const err = validateSessionValues(values)
-  if (err) return c.html(sessionFormPage({ session: body, action: '/admin/sessions/new', title: 'Add session', notice: err, ok: false }), 400)
+  if (err) {
+    const locationPresets = parseLocationPresets(await getLocationPresetsRaw(db))
+    return c.html(sessionFormPage({ session: body, action: '/admin/sessions/new', title: 'Add session', notice: err, ok: false, locationPresets }), 400)
+  }
 
   const newId = crypto.randomUUID()
   await db.rawSQL({ q: insertSessionSQL(), v: insertSessionValues(newId, values) }).run()
@@ -1300,7 +1481,8 @@ userApp.get('/admin/sessions/:id/edit', async (c) => {
     const data = await loadAdminPageData(db)
     return c.html(adminPage({ ...data, notice: 'Session not found — it may have been deleted.', ok: false }), 404)
   }
-  return c.html(sessionFormPage({ session, action: '/admin/sessions/' + encodeURIComponent(id) + '/edit', title: 'Edit session' }))
+  const locationPresets = parseLocationPresets(await getLocationPresetsRaw(db))
+  return c.html(sessionFormPage({ session, action: '/admin/sessions/' + encodeURIComponent(id) + '/edit', title: 'Edit session', locationPresets }))
 })
 
 userApp.post('/admin/sessions/:id/edit', async (c) => {
@@ -1311,9 +1493,10 @@ userApp.post('/admin/sessions/:id/edit', async (c) => {
   const values = sessionValuesFromForm(body)
   const err = validateSessionValues(values)
   if (err) {
+    const locationPresets = parseLocationPresets(await getLocationPresetsRaw(db))
     return c.html(sessionFormPage({
       session: { ...body, id }, action: '/admin/sessions/' + encodeURIComponent(id) + '/edit',
-      title: 'Edit session', notice: err, ok: false,
+      title: 'Edit session', notice: err, ok: false, locationPresets,
     }), 400)
   }
 
@@ -1490,6 +1673,21 @@ userApp.post('/admin/change-username', async (c) => {
 // stored as the current default rather than an empty string, so a future
 // change to DEFAULT_ICONS wouldn't silently affect an admin who already
 // saved this form once and left a field blank.
+userApp.post('/admin/location-presets', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+
+  const body = await c.req.parseBody()
+  const text = String(body['location_presets'] || '').trim()
+  await db.rawSQL({
+    q: "UPDATE admin_settings SET location_presets = ?, updated = CURRENT_TIMESTAMP WHERE id = 'main'",
+    v: [text || null],
+  }).run()
+
+  const data = await loadAdminPageData(db)
+  return c.html(adminPage({ ...data, notice: 'Default gather/dismissal points saved.', ok: true }))
+})
+
 userApp.post('/admin/icons', async (c) => {
   const db = await requireAdmin(c)
   if (!db) return unauthorized(c)

@@ -101,6 +101,11 @@ const adminSettings = {
     // CSV format) used by the /admin "Sync from Google Sheet" card. Blank
     // until an admin saves one via POST /admin/sheet-sync-url.
     tableField('sheet_sync_url', 'text', 'text', {}),
+    // Newline-separated "EN|ZH" pairs (e.g. "Eunos MRT|友诺士地铁站") used to
+    // populate the gather/dismissal-point quick-fill dropdown on the
+    // session form. Blank until an admin saves some via
+    // POST /admin/location-presets.
+    tableField('location_presets', 'text', 'text', {}),
     tableField('password_hash', 'text', 'text', { notNull: true }),
     tableField('password_salt', 'text', 'text', { notNull: true }),
     tableField('updated', 'date', 'timestamp', { notNull: true, default: sql`CURRENT_TIMESTAMP` }),
