@@ -265,9 +265,15 @@ needs escaping itself rather than relying on the tag.
   check, plain text otherwise) plus gather/dismissal lines instead of a
   location line, an "Outing" label, and derives its date-row time range
   as `gather_time – dismissal_time`.
-- `description_en/zh` (optional), `attire_en/zh` (optional), `vacancy`
-  (integer, optional), `meals_provided` (bool, optional), `emoji` (text,
-  optional — shown before the title on the card).
+- `description_en/zh` (optional), `schedule_en/zh` (optional, free-form
+  multi-line — a programme/itinerary, e.g. "9:00 AM - Gather\n9:30 AM -
+  Depart\n..."; applies to either session type, not just outings; shown
+  on the public card behind a `<details>`/`<summary>` disclosure toggle
+  rather than always-visible, since it's usually the longest text on a
+  card — no JS needed, the browser handles open/closed state), `attire_en/zh`
+  (optional), `vacancy` (integer, optional), `meals_provided` (bool,
+  optional), `emoji` (text, optional — shown before the title on the
+  card).
 
 To add a field: add it to `sessions.fields` in `teenybase.ts` (nullable,
 **not** a plain string `default:` — see the "Making changes" note above),

@@ -173,6 +173,13 @@ header.top{
 .detail-line a{color:var(--accent-ink);font-weight:700;text-decoration:none}
 .detail-line a:hover{text-decoration:underline}
 .card p.desc{margin:7px 0 0;font-size:calc(13.5px * var(--fs));color:var(--ink-soft);white-space:pre-line}
+.card details.schedule{margin-top:9px;text-align:left}
+.card details.schedule summary{font-size:calc(12.5px * var(--fs));font-weight:700;color:var(--accent-ink);
+  cursor:pointer;list-style:none;display:inline-flex;align-items:center}
+.card details.schedule summary::-webkit-details-marker{display:none}
+.card details.schedule[open] summary{margin-bottom:6px}
+.card p.schedule-text{margin:0;padding:9px 11px;background:var(--chip-bg);border-radius:8px;
+  font-size:calc(12.5px * var(--fs));color:var(--ink-soft);white-space:pre-line;text-align:left}
 .card-emoji{margin-right:7px;font-size:1.05em}
 .cal-btn{margin-top:11px;border:1px solid var(--border);background:var(--chip-bg);color:var(--ink-soft);
   font-size:calc(12px * var(--fs));font-weight:600;padding:6px 12px;border-radius:999px;cursor:pointer;transition:background-color .15s ease,color .15s ease}
@@ -209,6 +216,7 @@ const I18N = {
     dismissal: 'Dismissal',
     outingBadge: '🚌 Outing',
     viewMap: '↗ Map',
+    scheduleLabel: '📋 Programme schedule',
     emptyTitle: 'No sessions scheduled',
     emptyBody: 'Check back soon — new sessions will appear here as they are added.',
     emptyPastBody: 'No sessions to show yet.',
@@ -229,6 +237,7 @@ const I18N = {
     dismissal: '解散',
     outingBadge: '🚌 外出活动',
     viewMap: '↗ 地图',
+    scheduleLabel: '📋 活动流程',
     emptyTitle: '暂无场次安排',
     emptyBody: '请稍后再查看，新的场次会在这里显示。',
     emptyPastBody: '暂无可显示的场次。',
@@ -363,6 +372,7 @@ const CLIENT_SCRIPT = raw(`<script>
         var gatherPoint = state.lang === 'zh' ? (r.gather_point_zh || r.gather_point_en) : (r.gather_point_en || r.gather_point_zh);
         var dismissalPoint = state.lang === 'zh' ? (r.dismissal_point_zh || r.dismissal_point_en) : (r.dismissal_point_en || r.dismissal_point_zh);
         var desc = state.lang === 'zh' ? r.description_zh : r.description_en;
+        var schedule = state.lang === 'zh' ? (r.schedule_zh || r.schedule_en) : (r.schedule_en || r.schedule_zh);
         var attire = state.lang === 'zh' ? r.attire_zh : r.attire_en;
 
         var timeDisplay = isOuting
@@ -421,6 +431,7 @@ const CLIENT_SCRIPT = raw(`<script>
             '<h3>' + (r.emoji ? '<span class="card-emoji">' + esc(r.emoji) + '</span>' : '') + esc(title) + '</h3>' +
             (details ? '<div class="details">' + details + '</div>' : '') +
             (desc ? '<p class="desc">' + esc(desc) + '</p>' : '') +
+            (schedule ? '<details class="schedule"><summary>' + esc(t.scheduleLabel) + '</summary><p class="schedule-text">' + esc(schedule) + '</p></details>' : '') +
             (isPast ? '' : '<button type="button" class="cal-btn"' + icsAttrs + '>' + icons.date + ' ' + esc(t.addToCalendar) + '</button>') +
           '</div>'
         );
@@ -716,7 +727,7 @@ const SESSION_COLUMNS = [
   'venue_en', 'venue_zh', 'venue_map_url',
   'gather_point_en', 'gather_point_zh', 'gather_time',
   'dismissal_point_en', 'dismissal_point_zh', 'dismissal_time',
-  'description_en', 'description_zh', 'attire_en', 'attire_zh',
+  'description_en', 'description_zh', 'schedule_en', 'schedule_zh', 'attire_en', 'attire_zh',
   'vacancy', 'meals_provided', 'emoji',
 ]
 const EXPORT_COLUMNS = ['id', ...SESSION_COLUMNS]
@@ -767,6 +778,8 @@ function sessionValuesFromForm(body) {
     dismissal_time: str('dismissal_time'),
     description_en: str('description_en'),
     description_zh: str('description_zh'),
+    schedule_en: str('schedule_en'),
+    schedule_zh: str('schedule_zh'),
     attire_en: str('attire_en'),
     attire_zh: str('attire_zh'),
     vacancy: body.vacancy !== undefined && String(body.vacancy).trim() !== '' ? parseInt(body.vacancy, 10) : null,
@@ -1176,6 +1189,11 @@ function sessionFormPage({ session, action, title, notice, ok } = {}) {
       </div>
 
       <div class="field-pair">
+        <div><label for="schedule_en">Programme schedule (EN, optional)</label><textarea id="schedule_en" name="schedule_en" placeholder="9:00 AM - Gather&#10;9:30 AM - Depart&#10;10:00 AM - Activity 1">${val('schedule_en')}</textarea></div>
+        <div><label for="schedule_zh">Programme schedule (中文, optional)</label><textarea id="schedule_zh" name="schedule_zh">${val('schedule_zh')}</textarea></div>
+      </div>
+
+      <div class="field-pair">
         <div><label for="attire_en">Attire (EN)</label><input type="text" id="attire_en" name="attire_en" value="${val('attire_en')}"/></div>
         <div><label for="attire_zh">Attire (中文)</label><input type="text" id="attire_zh" name="attire_zh" value="${val('attire_zh')}"/></div>
       </div>
@@ -1367,6 +1385,8 @@ async function importCsvRows(db, text) {
         dismissal_time: raw.dismissal_time || null,
         description_en: raw.description_en || null,
         description_zh: raw.description_zh || null,
+        schedule_en: raw.schedule_en || null,
+        schedule_zh: raw.schedule_zh || null,
         attire_en: raw.attire_en || null,
         attire_zh: raw.attire_zh || null,
         vacancy: raw.vacancy !== undefined && String(raw.vacancy).trim() !== '' ? parseInt(raw.vacancy, 10) : null,

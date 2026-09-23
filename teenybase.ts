@@ -54,6 +54,12 @@ const sessions = {
     tableField('description_en', 'text', 'text', {}),
     tableField('description_zh', 'text', 'text', {}),
 
+    // Optional multi-line programme/itinerary (e.g. "9:00 AM - Gather\n9:30
+    // AM - Depart\n..."), shown collapsed behind a disclosure toggle on the
+    // public card so it doesn't bloat every card by default.
+    tableField('schedule_en', 'text', 'text', {}),
+    tableField('schedule_zh', 'text', 'text', {}),
+
     tableField('attire_en', 'text', 'text', {}),
     tableField('attire_zh', 'text', 'text', {}),
 
