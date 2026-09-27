@@ -66,6 +66,16 @@ const sessions = {
     tableField('vacancy', 'integer', 'integer', {}),
     tableField('meals_provided', 'bool', 'boolean', {}),
     tableField('emoji', 'text', 'text', {}), // optional icon shown on the card, e.g. "🎉" or "🧩"
+
+    // A specific date's session called off (e.g. a public holiday, no
+    // facilitator available) without deleting the row — the public card
+    // still shows the date but flags it as cancelled instead of hiding it,
+    // so caregivers see it was called off rather than just not scheduled.
+    // Nullable bool (see the note on session_type above re: string
+    // `default:`) — worker.ts treats a blank/null value as not closed.
+    tableField('closed', 'bool', 'boolean', {}),
+    tableField('closed_reason_en', 'text', 'text', {}), // optional, e.g. "Public holiday"
+    tableField('closed_reason_zh', 'text', 'text', {}),
   ],
   indexes: [{ fields: ['date'] }],
   extensions: [

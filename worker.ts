@@ -163,6 +163,7 @@ header.top{
   box-shadow:var(--shadow-sm); transition:transform .15s ease,box-shadow .15s ease,opacity .15s ease}
 @media(hover:hover){.card:not(.is-past):hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}}
 .card.is-past{opacity:.55}
+.card.is-closed{border-color:var(--danger)}
 .card .date-row{display:flex;justify-content:space-between;gap:10px;align-items:baseline;margin-bottom:7px}
 .card .date-line{font-size:calc(12px * var(--fs));font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.03em}
 .card .time-line{font-size:calc(12.5px * var(--fs));color:var(--ink-soft);white-space:nowrap;font-weight:500}
@@ -173,6 +174,7 @@ header.top{
 .detail-line.vacancy-low{color:var(--danger);font-weight:700}
 .detail-line.vacancy-ok{color:var(--accent-ink);font-weight:700}
 .detail-line.outing-label{color:var(--accent-ink);font-weight:700;text-transform:uppercase;font-size:calc(11px * var(--fs));letter-spacing:.03em}
+.cancelled-label{color:var(--danger);font-weight:700;font-size:calc(12.5px * var(--fs));margin:0 0 8px}
 .detail-line a{color:var(--accent-ink);font-weight:700;text-decoration:none}
 .detail-line a:hover{text-decoration:underline}
 .card p.desc{margin:7px 0 0;font-size:calc(13.5px * var(--fs));color:var(--ink-soft);white-space:pre-line}
@@ -221,6 +223,7 @@ const I18N = {
     outingBadge: '🚌 Outing',
     viewMap: '↗ Map',
     scheduleLabel: '📋 Programme schedule',
+    cancelledBadge: '⚠️ Cancelled',
     emptyTitle: 'No sessions scheduled',
     emptyBody: 'Check back soon — new sessions will appear here as they are added.',
     emptyPastBody: 'No sessions to show yet.',
@@ -243,6 +246,7 @@ const I18N = {
     outingBadge: '🚌 外出活动',
     viewMap: '↗ 地图',
     scheduleLabel: '📋 活动流程',
+    cancelledBadge: '⚠️ 活动取消',
     emptyTitle: '暂无场次安排',
     emptyBody: '请稍后再查看，新的场次会在这里显示。',
     emptyPastBody: '暂无可显示的场次。',
@@ -392,6 +396,7 @@ const CLIENT_SCRIPT = raw(`<script>
         var desc = state.lang === 'zh' ? r.description_zh : r.description_en;
         var schedule = state.lang === 'zh' ? (r.schedule_zh || r.schedule_en) : (r.schedule_en || r.schedule_zh);
         var attire = state.lang === 'zh' ? r.attire_zh : r.attire_en;
+        var closedReason = state.lang === 'zh' ? (r.closed_reason_zh || r.closed_reason_en) : (r.closed_reason_en || r.closed_reason_zh);
 
         var timeDisplay = isOuting
           ? [r.gather_time, r.dismissal_time].filter(Boolean).join(' – ')
@@ -441,16 +446,18 @@ const CLIENT_SCRIPT = raw(`<script>
           ' data-ics-desc="' + esc(desc || '') + '"';
 
         return (
-          '<div class="card' + (isPast ? ' is-past' : '') + '">' +
+          '<div class="card' + (isPast ? ' is-past' : '') + (r.closed ? ' is-closed' : '') + '">' +
             '<div class="date-row">' +
               '<span class="date-line">' + esc(dateLabel(r.date, state.lang)) + '</span>' +
               '<span class="time-line">' + esc(timeDisplay) + '</span>' +
             '</div>' +
             '<h3>' + (r.emoji ? '<span class="card-emoji">' + esc(r.emoji) + '</span>' : '') + esc(title) + '</h3>' +
+            (r.closed ? '<div class="detail-line cancelled-label">' + esc(t.cancelledBadge) +
+              (closedReason ? ' — ' + esc(closedReason) : '') + '</div>' : '') +
             (details ? '<div class="details">' + details + '</div>' : '') +
             (desc ? '<p class="desc">' + esc(desc) + '</p>' : '') +
             (schedule ? '<details class="schedule"><summary>' + esc(t.scheduleLabel) + '</summary><p class="schedule-text">' + esc(schedule) + '</p></details>' : '') +
-            (isPast ? '' : '<button type="button" class="cal-btn"' + icsAttrs + '>' + icons.date + ' ' + esc(t.addToCalendar) + '</button>') +
+            (isPast || r.closed ? '' : '<button type="button" class="cal-btn"' + icsAttrs + '>' + icons.date + ' ' + esc(t.addToCalendar) + '</button>') +
           '</div>'
         );
       }).join('');
@@ -756,7 +763,7 @@ const SESSION_COLUMNS = [
   'gather_point_en', 'gather_point_zh', 'gather_time',
   'dismissal_point_en', 'dismissal_point_zh', 'dismissal_time',
   'description_en', 'description_zh', 'schedule_en', 'schedule_zh', 'attire_en', 'attire_zh',
-  'vacancy', 'meals_provided', 'emoji',
+  'vacancy', 'meals_provided', 'emoji', 'closed', 'closed_reason_en', 'closed_reason_zh',
 ]
 const EXPORT_COLUMNS = ['id', ...SESSION_COLUMNS]
 
@@ -875,6 +882,9 @@ function sessionValuesFromForm(body) {
     vacancy: body.vacancy !== undefined && String(body.vacancy).trim() !== '' ? parseInt(body.vacancy, 10) : null,
     meals_provided: body.meals_provided ? 1 : 0,
     emoji: str('emoji'),
+    closed: body.closed ? 1 : 0,
+    closed_reason_en: str('closed_reason_en'),
+    closed_reason_zh: str('closed_reason_zh'),
   }
 }
 
@@ -1042,6 +1052,7 @@ const ADMIN_STYLE = raw(`<style>
 .session-row .meta .tag{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;
   color:var(--accent-ink);background:var(--accent-soft);border-radius:5px;padding:1px 6px;margin-right:6px;vertical-align:1px}
 .session-row .meta .tag.draft{color:var(--ink-soft);background:var(--chip-bg)}
+.session-row .meta .tag.closed{color:var(--danger);background:var(--danger-soft)}
 .session-row.is-draft{opacity:.7}
 .session-row.is-draft .meta .t{font-style:italic}
 </style>`)
@@ -1089,6 +1100,7 @@ function adminPage({ notice, ok, sessions, username, sheetSyncUrl, icons, locati
               '<div class="meta">' +
                 '<div class="d">' + (isDraft ? '<span class="tag draft">Draft</span>' : '') +
                   (isOuting ? '<span class="tag">Outing</span>' : '') +
+                  (s.closed ? '<span class="tag closed">Closed</span>' : '') +
                   escHtml(s.date) + (timeLabel ? ' &middot; ' + escHtml(timeLabel) : '') + '</div>' +
                 '<div class="t">' + (s.emoji ? escHtml(s.emoji) + ' ' : '') + escHtml(s.title_en || s.title_zh || '(untitled)') + '</div>' +
               '</div>' +
@@ -1107,6 +1119,14 @@ function adminPage({ notice, ok, sessions, username, sheetSyncUrl, icons, locati
       <a class="admin-btn" href="/admin/sessions/new">+ Add session</a>
       <a class="admin-link" href="/api/v1/pocket/" target="_blank" rel="noopener" style="align-self:center">or use PocketUI &rarr;</a>
     </div>
+  </div>
+
+  <div class="admin-card">
+    <h2>Review Chinese translations</h2>
+    <p class="hint">Go through every session's English text side-by-side with its 中文 text, all in one place,
+      instead of opening each one's edit page. Not sure of a translation? Leave that box blank and save — the
+      public calendar already falls back to showing the English text for any blank field.</p>
+    <div class="admin-actions"><a class="admin-btn secondary" href="/admin/translations">Review translations</a></div>
   </div>
 
   <div class="admin-card">
@@ -1353,6 +1373,17 @@ function sessionFormPage({ session, action, title, notice, ok, locationPresets }
         <label for="meals_provided">Meals provided</label>
       </div>
 
+      <div class="checkbox-row">
+        <input type="checkbox" id="closed" name="closed" ${s.closed ? 'checked' : ''}/>
+        <label for="closed">This session is cancelled / won't run</label>
+      </div>
+      <div data-closed-group>
+        <div class="field-pair">
+          <div><label for="closed_reason_en">Reason (EN, optional)</label><input type="text" id="closed_reason_en" name="closed_reason_en" value="${val('closed_reason_en')}" placeholder="e.g. Public holiday"/></div>
+          <div><label for="closed_reason_zh">Reason (中文, optional)</label><input type="text" id="closed_reason_zh" name="closed_reason_zh" value="${val('closed_reason_zh')}"/></div>
+        </div>
+      </div>
+
       <div class="admin-actions">
         <button class="admin-btn secondary" type="submit" name="intent" value="draft">Save as draft</button>
         <button class="admin-btn" type="submit" name="intent" value="publish">Publish</button>
@@ -1374,6 +1405,17 @@ function sessionFormPage({ session, action, title, notice, ok, locationPresets }
   radios.forEach(function (r) { r.addEventListener('change', sync); });
   sync();
 
+  var closedBox = document.getElementById('closed');
+  function syncClosed() {
+    document.querySelectorAll('[data-closed-group]').forEach(function (el) {
+      el.style.display = closedBox.checked ? '' : 'none';
+    });
+  }
+  if (closedBox) {
+    closedBox.addEventListener('change', syncClosed);
+    syncClosed();
+  }
+
   document.querySelectorAll('.preset-select').forEach(function (sel) {
     sel.addEventListener('change', function () {
       var opt = sel.options[sel.selectedIndex];
@@ -1393,6 +1435,95 @@ function sessionFormPage({ session, action, title, notice, ok, locationPresets }
 async function listSessionsForAdmin(db) {
   const result = await db.table('sessions').select({ select: EXPORT_COLUMNS, order: 'date', sort: 'asc', limit: 5000 })
   return Array.isArray(result) ? result : result.items || result.results || []
+}
+
+// Which EN/ZH field pairs are worth reviewing for a given session — only
+// ones with English text at all (an in-house session has no venue/gather
+// fields to translate, an outing has no location field, an optional field
+// left completely blank has nothing to translate either). `key` doubles as
+// the DB column prefix (key + '_zh'), so both the review page and its
+// save route can derive the exact column list from this one function
+// rather than keeping two lists in sync.
+function translationRows(s) {
+  const rows = []
+  const add = (key, label, en, zh) => {
+    if (String(en || '').trim()) rows.push({ key, label, en, zh: zh || '' })
+  }
+  add('title', 'Title', s.title_en, s.title_zh)
+  if (s.session_type === 'outing') {
+    add('venue', 'Venue', s.venue_en, s.venue_zh)
+    add('gather_point', 'Gather point', s.gather_point_en, s.gather_point_zh)
+    add('dismissal_point', 'Dismissal point', s.dismissal_point_en, s.dismissal_point_zh)
+  } else {
+    add('location', 'Location', s.location_en, s.location_zh)
+  }
+  add('description', 'Description', s.description_en, s.description_zh)
+  add('schedule', 'Programme schedule', s.schedule_en, s.schedule_zh)
+  add('attire', 'Attire', s.attire_en, s.attire_zh)
+  if (s.closed) add('closed_reason', 'Cancellation reason', s.closed_reason_en, s.closed_reason_zh)
+  return rows
+}
+
+const TRANSLATION_TEXTAREA_KEYS = ['description', 'schedule']
+
+function translationsPage({ sessions, notice, ok } = {}) {
+  const withMeta = (sessions || []).map((s) => {
+    const fields = translationRows(s)
+    const needsReview = fields.some((f) => !String(f.zh || '').trim())
+    return { s, fields, needsReview }
+  })
+  const reviewable = withMeta.filter((x) => x.fields.length > 0)
+  const sorted = reviewable.slice().sort((a, b) => {
+    if (a.needsReview !== b.needsReview) return a.needsReview ? -1 : 1
+    return String(a.s.date || '').localeCompare(String(b.s.date || ''))
+  })
+  const missingCount = reviewable.filter((x) => x.needsReview).length
+  const summary = reviewable.length === 0
+    ? 'No sessions with translatable text yet.'
+    : missingCount > 0
+      ? `${missingCount} of ${reviewable.length} session(s) below have at least one blank 中文 field.`
+      : 'Every session below has every field translated.'
+
+  return html`<!doctype html><html lang="en"><head>${adminHeader('Review translations')}</head><body>
+<div class="admin-wrap">
+  <a class="back-link" href="/admin">&larr; Back to admin</a>
+  <h1>Review Chinese translations</h1>
+  <p class="lead">English is shown for reference next to each editable 中文 box. <strong>Not sure of a
+    translation? Leave its box blank and save</strong> — the public calendar already shows the English text
+    instead of a blank field, so nothing breaks; come back and fill it in whenever you're ready. ${summary}</p>
+  ${notice ? html`<div class="notice ${ok ? 'ok' : 'err'}">${notice}</div>` : ''}
+  ${sorted.length === 0
+    ? html`<p class="empty-hint">Nothing to review yet.</p>`
+    : raw(sorted.map(({ s, fields, needsReview }) => {
+        const rowsHtml = fields.map((f) => {
+          const inputId = f.key + '_zh_' + s.id
+          const isArea = TRANSLATION_TEXTAREA_KEYS.indexOf(f.key) !== -1
+          const control = isArea
+            ? '<textarea id="' + inputId + '" name="' + f.key + '_zh">' + escHtml(f.zh) + '</textarea>'
+            : '<input type="text" id="' + inputId + '" name="' + f.key + '_zh" value="' + escHtml(f.zh) + '"' +
+              (f.key === 'title' ? ' required' : '') + '/>'
+          const missing = !String(f.zh || '').trim()
+          return (
+            '<div class="field-pair">' +
+              '<div><label>' + escHtml(f.label) + ' (EN)</label><p class="hint" style="margin:6px 0 0">' + escHtml(f.en) + '</p></div>' +
+              '<div><label for="' + inputId + '">' + escHtml(f.label) + ' (中文)' +
+                (missing ? ' <span class="tag draft">blank</span>' : '') + '</label>' + control + '</div>' +
+            '</div>'
+          )
+        }).join('')
+        return (
+          '<div class="admin-card">' +
+            '<h2>' + (needsReview ? '<span class="tag draft" style="margin-right:8px;vertical-align:2px">Needs review</span>' : '') +
+              escHtml(s.date) + ' &middot; ' + escHtml(s.title_en || s.title_zh || '(untitled)') + '</h2>' +
+            '<form method="post" action="/admin/translations/' + encodeURIComponent(s.id) + '">' +
+              rowsHtml +
+              '<div class="admin-actions"><button class="admin-btn" type="submit">Save translations</button></div>' +
+            '</form>' +
+          '</div>'
+        )
+      }).join(''))}
+</div>
+</body></html>`
 }
 
 // Bundles everything adminPage() needs to render (sessions list, current
@@ -1444,6 +1575,42 @@ userApp.get('/admin', async (c) => {
   if (!db) return unauthorized(c)
   const data = await loadAdminPageData(db)
   return c.html(adminPage(data))
+})
+
+userApp.get('/admin/translations', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+  const sessions = await listSessionsForAdmin(db)
+  return c.html(translationsPage({ sessions }))
+})
+
+userApp.post('/admin/translations/:id', async (c) => {
+  const db = await requireAdmin(c)
+  if (!db) return unauthorized(c)
+  const id = c.req.param('id')
+  const body = await c.req.parseBody()
+  const str = (k) => (String(body[k] || '').trim() || null)
+
+  const rows = await db.rawSQL({ q: 'SELECT * FROM sessions WHERE id = ?', v: [id] }).run()
+  const row = rows && rows[0]
+  if (!row) {
+    const sessions = await listSessionsForAdmin(db)
+    return c.html(translationsPage({ sessions, notice: 'Session not found.', ok: false }), 404)
+  }
+
+  const fields = translationRows(row)
+  if (!str('title_zh')) {
+    const sessions = await listSessionsForAdmin(db)
+    return c.html(translationsPage({ sessions, notice: "Title (中文) can't be blank.", ok: false }), 400)
+  }
+
+  const cols = fields.map((f) => `${f.key}_zh`)
+  const setClause = cols.map((col) => `${col}=?`).join(', ')
+  const values = fields.map((f) => str(`${f.key}_zh`))
+  await db.rawSQL({ q: `UPDATE sessions SET ${setClause}, updated=CURRENT_TIMESTAMP WHERE id=?`, v: [...values, id] }).run()
+
+  const sessions = await listSessionsForAdmin(db)
+  return c.html(translationsPage({ sessions, notice: 'Saved translations.', ok: true }))
 })
 
 userApp.get('/admin/sessions/new', async (c) => {
