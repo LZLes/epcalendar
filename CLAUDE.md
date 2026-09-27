@@ -177,8 +177,9 @@ before/after filling `#date`) — if a future field adds either input type,
 it needs the same treatment or it'll drift from the rest of the form.
 
 - **Sessions list** — every session, soonest first, with a `Draft` tag
-  on draft rows (dimmed row, italic title) and an `Outing` tag on outing
-  rows, Edit/Delete per row, and an "+ Add session" button. `GET /admin`.
+  on draft rows (dimmed row, italic title), an `Outing` tag on outing
+  rows, and a red `Closed` tag on cancelled ones, Edit/Delete per row,
+  and an "+ Add session" button. `GET /admin`.
 - **Add / edit** — `GET /admin/sessions/new` and
   `GET /admin/sessions/:id/edit` render a form (shared `sessionFormPage()`
   in `worker.ts`) with an In-house/Outing radio toggle that shows/hides
@@ -261,6 +262,35 @@ it needs the same treatment or it'll drift from the rest of the form.
   upsert is also what *creates* the row the first time — no migration
   seeding needed (see the "Making changes" note on why that doesn't
   work here).
+- **Cancelling a session** — a `closed` checkbox on the session form
+  (with an optional EN/中文 reason shown/hidden by a `[data-closed-group]`
+  toggle, same no-backslash inline-script pattern as the type-radio
+  toggle) marks that one date's row as called off *without deleting it*
+  — the row stays in `/admin` and on the public page (so caregivers see
+  it was cancelled, not just silently missing) but with a red "Cancelled"
+  banner and its reason instead of the normal detail lines, and no
+  "Add to calendar" button. `session_type`/`status` are unaffected —
+  a closed session can still be a draft or published, in-house or an
+  outing.
+- **Review Chinese translations** — `GET /admin/translations` (linked
+  from a card on `/admin`) lists every session's EN/ZH field pairs
+  side by side — only the fields that actually apply to that session
+  (`translationRows()` skips a pair entirely when its English text is
+  blank, so an in-house session shows no Venue row, an outing shows no
+  Location row, etc.). English is plain reference text; only the 中文
+  box is editable. A session with any blank 中文 field where English is
+  present is tagged "Needs review" and sorted to the top. **Leaving a
+  box blank and saving is a supported, first-class outcome** — the
+  public card already falls back to the English text for any blank
+  Chinese field, so nothing breaks; it's how an admin unsure of a
+  translation defers it instead of guessing. `POST
+  /admin/translations/:id` re-reads that one session's current row,
+  recomputes the same `translationRows()` list server-side, and only
+  updates the `_zh` columns that list actually contains — so a field
+  that isn't shown for that session (e.g. `venue_zh` on an in-house
+  session) is never touched, even though the submitted form has no
+  input for it. `title_zh` still can't be saved blank (same notNull
+  constraint as the main form).
 - **Admin login** — `POST /admin/change-username` (3–40 chars,
   `[A-Za-z0-9_.@-]`) and `POST /admin/change-password` (updates
   `admin_settings` with a fresh random salt + hash). Both are unrelated
@@ -318,6 +348,13 @@ needs escaping itself rather than relying on the tag.
   (optional), `vacancy` (integer, optional), `meals_provided` (bool,
   optional), `emoji` (text, optional — shown before the title on the
   card).
+- `closed` (bool, optional) + `closed_reason_en/zh` (optional) — a
+  specific date's session called off (public holiday, no facilitator,
+  etc.) without deleting the row. Independent of `status`: a closed
+  session can be a draft or published, in-house or an outing. The public
+  card still shows it (unlike a draft) with a red "Cancelled" banner and
+  the reason instead of its normal detail lines, and no "Add to
+  calendar" button — see "Admin portal" above for how it's set.
 
 To add a field: add it to `sessions.fields` in `teenybase.ts` (nullable,
 **not** a plain string `default:` — see the "Making changes" note above),
@@ -352,6 +389,13 @@ field or a missing row both fall back to `DEFAULT_ICONS`.
   resets to `'all'` if the previously-selected key stops being valid
   (e.g. toggling "Show past sessions" off hides the only session in a
   past month) — see `render()` in `CLIENT_SCRIPT`.
+- A closed/cancelled session (`r.closed`) still renders — it isn't
+  filtered out of `visible`/`groups` like a draft is — but with
+  `.card.is-closed` (red border), a `.cancelled-label` banner above the
+  normal detail lines (location/venue/gather/dismissal still show, so
+  caregivers can see what was planned), and no "Add to calendar" button
+  (`isPast || r.closed` both suppress it). See `render()` in
+  `CLIENT_SCRIPT`.
 - "Upcoming" is computed against *today in Asia/Singapore time*
   (`Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Singapore'})`), not the
   visitor's local timezone.

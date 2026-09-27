@@ -8,10 +8,11 @@ Built on [teenyapp.com](https://teenyapp.com), project slug `myg-ep-sessions`.
 
 - **Live site:** https://myg-ep-sessions.app.teenyapp.com
 - **Admin portal:** `/admin` — add/edit/delete sessions (in-house or
-  outing, draft or published), bulk export/import (CSV + JSON), one-way
-  sync from a published Google Sheet, customizable calendar icons, and
-  its own changeable username + password. The main way to manage sessions
-  day to day. See `CLAUDE.md` for details.
+  outing, draft or published, cancellable with a reason), bulk
+  export/import (CSV + JSON), one-way sync from a published Google
+  Sheet, a side-by-side Chinese translation review page, customizable
+  calendar icons, and its own changeable username + password. The main
+  way to manage sessions day to day. See `CLAUDE.md` for details.
 - **PocketUI (optional):** `/api/v1/pocket/` — the built-in raw table
   editor, still there as a fallback. Credentials aren't stored in this
   repo — see the project dashboard, or the chat this was set up in.
